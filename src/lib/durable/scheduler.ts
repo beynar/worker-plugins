@@ -3,7 +3,7 @@ import { parse, stringify } from '../transform';
 import { getHandler } from '../rpc/handler';
 import { AnyRouter } from '../rpc/router';
 import { API, createApi } from '../rpc/api';
-import { date, never, number, object, string, union } from 'zod/mini';
+import { date, never, number, object, optional, string, union } from 'zod/mini';
 import { DurableServer } from './object';
 import { ScheduleRequestEvent } from '../rpc/requestEvent';
 
@@ -75,9 +75,9 @@ export type SqlTask = {
 	  }
 );
 const options = union([
-	object({ at: date(), in: never(), cron: never() }),
-	object({ in: number(), at: never(), cron: never() }),
-	object({ cron: string(), at: never(), in: never() }),
+	object({ at: date(), in: optional(number()), cron: optional(string()) }),
+	object({ in: number(), at: optional(date()), cron: optional(string()) }),
+	object({ cron: string(), at: optional(date()), in: optional(number()) }),
 ]);
 
 export class Scheduler<Tasks extends AnyRouter | undefined = undefined> {
@@ -105,7 +105,7 @@ export class Scheduler<Tasks extends AnyRouter | undefined = undefined> {
 						handler: path.join('.'),
 						payload: data,
 					});
-				} else {
+				} else if (opts.cron) {
 					await this.scheduleTask({
 						type: 'cron',
 						cron: opts.cron,
