@@ -48,28 +48,45 @@ type DurableObjectPlugin = {
 // It should look like this:
 
 // worker.ts
-// import { WorkerPlugin, workerWithPlugins, createDurableObjectWithPlugins } from 'worker-plugins';
+import { WorkerPlugin, createWorker, createDurableObjectWithPlugins } from 'worker-plugins';
 
-// const plugin = new WorkerPlugin({
-// 	name: 'hello',
-// 	path: 'worker.ts',
-// });
+const plugin = new WorkerPlugin({
+	name: 'hello',
+	path: 'worker.ts',
+});
 
-// export default workerWithPlugins([plugin]);
+export const worker = createWorker([plugin]);
 
-// const durablePlugin = new DurableObjectPlugin({
-// 	name: 'world',
-// 	expose: {
-// 		methodFromPlugin: () => 'Hello, World!',
-// 	},
-// });
-// export class MyDurableObject extends createDurableObjectWithPlugins([durablePlugin]) {
-// 	constructor(ctx: DurableObjectState, env: Env) {
-// 		super(ctx, env);
-// 	}
+const workerRouter = worker.createRouter('worker');
+const router = {
+	test: workerRouter
+		.procedure()
+		.input(z.string())
+		.handle(({ input }) => {
+			//
+		}),
+};
 
-// 	async sayHello(name: string): Promise<string> {
-// 		return `Hello, ${name}!`;
-// 		this.methodFromPlugin(); // should be defined
-// 	}
-// }
+const api = worker.api({
+	router,
+});
+
+export type API = typeof api.infer;
+export default api;
+
+const durablePlugin = new DurableObjectPlugin({
+	name: 'world',
+	expose: {
+		methodFromPlugin: () => 'Hello, World!',
+	},
+});
+export class MyDurableObject extends createDurableObjectWithPlugins([durablePlugin]) {
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env);
+	}
+
+	async sayHello(name: string): Promise<string> {
+		return `Hello, ${name}!`;
+		this.methodFromPlugin(); // should be defined
+	}
+}

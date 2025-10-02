@@ -64,43 +64,6 @@ export class Cookies {
 		}
 		return response;
 	}
-	private serialize = (name: string, value: string, opt: SerializeOptions = {}): string => {
-		let cookie = `${name}=${value}`;
-
-		if (opt && typeof opt.maxAge === 'number' && opt.maxAge >= 0) {
-			cookie += `; Max-Age=${Math.floor(opt.maxAge)}`;
-		}
-
-		if (opt.domain) {
-			cookie += `; Domain=${opt.domain}`;
-		}
-
-		if (opt.path) {
-			cookie += `; Path=${opt.path}`;
-		}
-
-		if (opt.expires) {
-			cookie += `; Expires=${opt.expires.toUTCString()}`;
-		}
-
-		if (opt.httpOnly) {
-			cookie += '; HttpOnly';
-		}
-
-		if (opt.secure) {
-			cookie += '; Secure';
-		}
-
-		if (opt.sameSite) {
-			cookie += `; SameSite=${opt.sameSite}`;
-		}
-
-		if (opt.partitioned) {
-			cookie += '; Partitioned';
-		}
-
-		return cookie;
-	};
 }
 
 export const withCookies = (reponse: Response, { cookies }: { cookies: Cookies }) => {

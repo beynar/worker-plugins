@@ -10,9 +10,9 @@ export type ApiResult<T> = Promise<[Awaited<T>, null] | [null, ErrorResponse]>;
 
 export type StreamCallback<S = any> = ({ chunk, first }: { chunk: S; first: boolean }) => void;
 
-type WithOpts<Func extends (...args: any[]) => any, Opts extends StandardSchemaV1 | undefined = undefined> = Opts extends undefined
-	? Func
-	: (p: Parameters<Func>[0], opts: Opts) => ReturnType<Func>;
+type WithOpts<Func extends (...args: any[]) => any, Opts extends StandardSchemaV1 | undefined = undefined> = Opts extends StandardSchemaV1
+	? (p: Parameters<Func>[0], opts: StandardSchemaV1.InferInput<Opts>) => ReturnType<Func>
+	: Func;
 
 export type API<R extends AnyRouter = AnyRouter, Opts extends StandardSchemaV1 | undefined = undefined> = {
 	[K in keyof R]: R[K] extends Handler<infer H, infer M, infer P, infer S>
@@ -56,15 +56,20 @@ export const recursiveProxy = <Opts extends StandardSchemaV1 | undefined = undef
 	return proxy;
 };
 
-export const createApi = <R extends AnyRouter, Opts extends StandardSchemaV1 | undefined = undefined>({
+const isAnyRouter = (router: AnyRouter | undefined): router is AnyRouter => {
+	return router !== undefined;
+};
+
+export const createApi = <R extends AnyRouter | undefined, Opts extends StandardSchemaV1 | undefined = undefined>({
 	router,
 	callback,
 	options,
 }: {
-	router: R;
+	router?: R;
 	options?: Opts;
 	callback: (opts: Parameters<RecursiveProxyCallback<Opts>>[0] & { handler: AnyHandler }) => MaybePromise<void>;
-}) => {
+}): R extends undefined ? never : R extends AnyRouter ? API<R, Opts> : never => {
+	if (!isAnyRouter(router)) return {} as never;
 	return recursiveProxy<Opts>(async ({ type, path, data, opts }) => {
 		const handler = getHandler(router, path);
 		const parsedData = await validate(handler.schema, data);
@@ -77,22 +82,27 @@ export const createApi = <R extends AnyRouter, Opts extends StandardSchemaV1 | u
 			opts: parsedOptions as Opts extends StandardSchemaV1 ? StandardSchemaV1.InferInput<Opts> : never,
 			handler,
 		});
-	}) as API<R, Opts>;
+	}) as R extends undefined ? never : R extends AnyRouter ? API<R, Opts> : never;
 };
 
-const router = createRouter('schedule');
-const r = {
-	task: router
-		.procedure()
-		.input(z.object({ test: z.string() }))
-		.handle(() => {
-			//
-		}),
-};
-const api = createApi({
-	router: r,
-	callback: ({ type, path, data, opts, handler }) => {},
-	// options:z.object({ at: z.date() })
-});
-
-api.task({ test: '' });
+// const router = createRouter('schedule');
+// const r = {
+// 	task: router
+// 		.procedure()
+// 		.input(z.object({ test: z.string() }))
+// 		.handle(({ input, event }) => {
+// 			return {
+// 				data: "helloe"
+// 			}
+// 		}),
+// };
+// const api = createApi({
+// 	router: r,
+// 	callback: ({ type, path, data, opts, handler }) => {},
+// 	options: z.union([
+// 		z.object({ at: z.date(), in: z.never().optional(), cron: z.never().optional() }).strict(),
+// 		z.object({ in: z.number(), at: z.never().optional(), cron: z.never().optional() }).strict(),
+// 		z.object({ cron: z.string(), at: z.never().optional(), in: z.never().optional() }).strict(),
+// 	]),
+// 	// options: z.object({ at: z.date() })
+// });

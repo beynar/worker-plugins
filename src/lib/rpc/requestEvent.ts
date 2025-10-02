@@ -5,6 +5,8 @@ import { ProcedureType } from './procedure';
 import { Register } from '..';
 import { MaybePromise } from '../utils/types';
 
+export type DurableRequest = CfRequest & { cf: { meta: DurableMeta; isWebSocketConnect: boolean } };
+
 export type GetObjectJurisdictionOrLocationHint = (event: WorkerRequestEvent) => MaybePromise<{
 	jurisdiction?: DurableObjectJurisdiction;
 	locationHint?: DurableObjectLocationHint;
@@ -190,6 +192,21 @@ export const buildEvent = async (
 	return event;
 };
 
+export const createDurableRequestEvent = (request: DurableRequest, env: Env, ctx: DurableObjectState): DurableRequestEvent => {
+	const url = new URL(request.url);
+	const path = url.pathname.split('/').filter(Boolean);
+
+	return {
+		ctx,
+		cookies: new Cookies(request),
+		env,
+		meta: { name: null, id: null, jurisdiction: null, locationHint: null },
+		request,
+		url: new URL(request.url),
+		path,
+	};
+};
+
 export const getPath = (event: WorkerRequestEvent | DurableRequestEvent) => {
 	let isObject = false;
 	event.path = event.url.pathname.split('/').filter((part) => {
@@ -205,8 +222,4 @@ export const getPath = (event: WorkerRequestEvent | DurableRequestEvent) => {
 		}
 		return true;
 	});
-	const method = event.request.method;
-	if (method !== 'POST' && !isObject) {
-		event.path.push(method.toLocaleLowerCase());
-	}
 };

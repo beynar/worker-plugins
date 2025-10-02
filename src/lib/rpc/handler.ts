@@ -48,7 +48,10 @@ const isHandler = (handler: any): handler is Handler<any, any, any, any> => {
 	return 'call' in handler;
 };
 
-export const getHandler = (router: AnyRouter, path: string[]) => {
+export const getHandler = (router: AnyRouter | undefined, path: string[]) => {
+	if (!router) {
+		throw error('NOT_FOUND', 'router not found');
+	}
 	type H = AnyRouter | Handler<any, any, any, any> | undefined;
 	let handler: H = router;
 	path.forEach((segment) => {
