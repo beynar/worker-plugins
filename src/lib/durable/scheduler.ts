@@ -294,7 +294,7 @@ export class Scheduler<Tasks extends AnyRouter | undefined = undefined> {
 
 		try {
 			const { handler: handlerPath } = task;
-			const handler = getHandler(this.server.tasks, handlerPath.split('.'));
+			const handler = getHandler(this.server.tasks, handlerPath.split('.'), true);
 			const event: ScheduleRequestEvent = {
 				ctx: this.server.ctx,
 				env: this.server.env,

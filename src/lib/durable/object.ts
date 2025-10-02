@@ -1,9 +1,10 @@
 import { DurableObject } from 'cloudflare:workers';
-import { WebsocketManager } from './websocket';
+import { WebsocketManager, WS_API } from './websocket';
 import { DurableKV } from './kv';
 import { Scheduler } from './scheduler';
 import { AnyRouter, createRouter } from '../rpc/router';
 import { createDurableRequestEvent, DurableMeta, DurableRequest, DurableRequestEvent } from '../rpc/requestEvent';
+import { object, string } from 'zod';
 
 export class DurableServer<
 	Router extends AnyRouter | undefined = undefined,
@@ -21,6 +22,7 @@ export class DurableServer<
 	declare router: Router;
 	declare ws_in: WS_IN;
 	declare ws_out: WS_OUT;
+	declare ws: WS_API<WS_OUT>;
 
 	declare getSessionDataAndParticipant?: (event: DurableRequestEvent) => Promise<{ session: any; participant: any; tags: string[] }>;
 
@@ -52,15 +54,13 @@ export class DurableServer<
 
 	async webSocketError(ws: WebSocket, error: unknown) {
 		this.websocketManager.onWebSocketError(ws, error);
-		this.plugins?.forEach((plugin) => {
-			plugin.onWebSocketError?.(ws, error);
-		});
 	}
 	async webSocketClose(ws: WebSocket, code: number, reason: string) {
 		this.websocketManager.onWebSocketClose(ws, code, reason);
-		this.plugins?.forEach((plugin) => {
-			plugin.onWebSocketClose?.(ws, code, reason);
-		});
+	}
+
+	async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
+		this.websocketManager.handleWebSocketMessage(ws, message);
 	}
 
 	async alarm() {
@@ -69,3 +69,22 @@ export class DurableServer<
 }
 
 export type AnyDurableServer = DurableServer<any, any, any, any>;
+
+const out = createRouter('schedule')
+	.procedure()
+	.input(
+		object({
+			value: string(),
+		})
+	)
+	.handle(async ({ input, event }) => {
+		return input;
+	});
+
+const router = {
+	alarm: out,
+};
+
+const x = {} as DurableServer<any, typeof router, any>;
+
+x.schedule.alarm({ value: 'coucou' }, { cron: '* * * * *' });

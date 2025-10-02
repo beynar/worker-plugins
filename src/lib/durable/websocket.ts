@@ -3,11 +3,14 @@ import { AnyRouter } from '../rpc/router';
 import { DurableServer } from './object';
 import { string } from 'zod/mini';
 import { API, createApi } from '../rpc/api';
-import { DurableRequestEvent, Session } from '../rpc/requestEvent';
-import { error, handleError } from '../error';
+import { DurableRequestEvent, Session, WebsocketInputRequestEvent, WebsocketOutputRequestEvent } from '../rpc/requestEvent';
+import { error, handleError, websocketError } from '../error';
 import { stringify, parse } from 'devalue';
 import { withCookies } from '../cookies';
 import { Register } from '..';
+import { getHandler } from '../rpc/handler';
+import { validate } from '../utils/validate';
+import { WS_PRESENCE_TYPE, WS_RESPONSE_TYPE } from '../constants';
 
 export type Tags = Register extends {
 	Tags: infer _Tags;
@@ -28,25 +31,61 @@ export const deserializeSession = (ws: WebSocket): Session => {
 	return parse(ws.deserializeAttachment()) as Session;
 };
 
+export type WS_API<Out extends AnyRouter | undefined = undefined> = {
+	send: Out extends AnyRouter ? API<Out, typeof sendOptions> : undefined;
+	broadcast: Out extends AnyRouter ? API<Out> : undefined;
+};
+
 export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out extends AnyRouter | undefined = undefined> {
 	private server: DurableServer<any, any, In, Out>;
 
-	ws: {
-		send: Out extends AnyRouter ? API<Out, typeof sendOptions> : undefined;
-		broadcast: Out extends AnyRouter ? API<Out> : undefined;
-	};
-
 	constructor(server: DurableServer<any, any, In, Out>) {
 		this.server = server;
-		this.ws = {
+		this.server.ws = {
 			send: createApi({
 				router: server.ws_out,
-				callback: ({ data, opts, handler, path }) => {},
+				callback: async ({ data, opts, handler, path }) => {
+					const { to, omit } = opts;
+					const sessions = this.getSessions(typeof to === 'string' && to !== 'ALL' ? to : undefined).filter(
+						typeof to === 'function'
+							? to
+							: ({ session }) => {
+									if (omit && omit.length > 0) {
+										return !omit.includes(session.participant.id);
+									} else if (Array.isArray(to)) {
+										return to.includes(session.participant.id);
+									}
+									return true;
+							  }
+					);
+
+					if (sessions.length) {
+						const event: WebsocketOutputRequestEvent = {
+							to: sessions,
+							env: this.server.env,
+							ctx: this.server.ctx,
+						};
+						const ctx = await handler?.call(event, data);
+						sessions.forEach(({ ws }) => {
+							ws.send(stringify({ type: path.join('.'), data, ctx }));
+						});
+					}
+				},
 				options: sendOptions,
 			}),
 			broadcast: createApi({
 				router: server.ws_out,
-				callback: ({ data, opts, handler, path }) => {},
+				callback: async ({ data, handler, path }) => {
+					const event: WebsocketOutputRequestEvent = {
+						to: this.getSessions(),
+						env: this.server.env,
+						ctx: this.server.ctx,
+					};
+					const ctx = await handler?.call(event, data);
+					event.to.forEach(({ ws }) => {
+						ws.send(stringify({ type: path.join('.'), data, ctx }));
+					});
+				},
 			}),
 		};
 	}
@@ -56,10 +95,13 @@ export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out 
 	};
 
 	getSessions = (tag?: Tags) => {
-		return this.server.ctx.getWebSockets(tag).map((ws) => ({
-			session: deserializeSession(ws),
-			ws,
-		}));
+		return this.server.ctx
+			.getWebSockets(tag)
+			.map((ws) => ({
+				session: deserializeSession(ws),
+				ws,
+			}))
+			.filter((s) => s.session.connected);
 	};
 
 	private sendPresence = (tag?: Tags) => {
@@ -76,19 +118,65 @@ export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out 
 			.map(({ session: { participant } }) => participant);
 
 		webSockets.forEach((value) => {
-			value.send(stringify({ type: 'presence', data: participants }));
+			value.send(stringify({ type: WS_PRESENCE_TYPE, data: participants }));
 		});
 	};
 
 	async onWebSocketError(ws: WebSocket, error: unknown) {
+		this.server.plugins?.forEach((plugin) => {
+			plugin.onWebSocketError?.(ws, error);
+		});
 		setTimeout(() => {
 			this.sendPresence();
 		});
 	}
 	async onWebSocketClose(ws: WebSocket, code: number, reason: string) {
+		this.server.plugins?.forEach((plugin) => {
+			plugin.onWebSocketClose?.(ws, code, reason);
+		});
 		setTimeout(() => {
 			this.sendPresence();
 		});
+	}
+
+	async handleWebSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+		try {
+			const session = deserializeSession(ws);
+			const event: WebsocketInputRequestEvent = {
+				ws,
+				session,
+				env: this.server.env,
+				ctx: this.server.ctx,
+			};
+			if (typeof message !== 'string') {
+				return this.server.plugins?.forEach((plugin) => {
+					plugin.onArrayBufferMessage?.({
+						...event,
+						isHandled: false,
+						input: message as ArrayBuffer,
+					});
+				});
+			}
+			const { type: messageType, data: messageData, id: messageId } = parse(message as string);
+			const handler = getHandler(this.server.ws_in, messageType.split('.'), false);
+			const parsedData = await validate(handler?.schema, messageData);
+
+			this.server.plugins?.forEach((plugin) => {
+				plugin.onWebSocketMessage?.({
+					...event,
+					input: parsedData,
+					isHandled: !!handler,
+				});
+			});
+			if (handler) {
+				const response = await handler?.call(event, parsedData);
+				ws.send(stringify({ type: WS_RESPONSE_TYPE, data: response, id: messageId }));
+			} else {
+				ws.send(websocketError('NOT_FOUND', 'Handler not found'));
+			}
+		} catch (error) {
+			ws.send(websocketError('INTERNAL_SERVER_ERROR', 'Internal server error'));
+		}
 	}
 
 	handleWebsocketConnection = async (event: DurableRequestEvent) => {

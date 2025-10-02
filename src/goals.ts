@@ -67,12 +67,9 @@ const router = {
 		}),
 };
 
-const api = worker.api({
+export default worker.api({
 	router,
 });
-
-export type API = typeof api.infer;
-export default api;
 
 const durablePlugin = new DurableObjectPlugin({
 	name: 'world',

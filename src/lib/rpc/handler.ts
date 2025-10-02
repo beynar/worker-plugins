@@ -48,7 +48,11 @@ const isHandler = (handler: any): handler is Handler<any, any, any, any> => {
 	return 'call' in handler;
 };
 
-export const getHandler = (router: AnyRouter | undefined, path: string[]) => {
+export const getHandler = <T extends boolean | undefined = true>(
+	router: AnyRouter | undefined,
+	path: string[],
+	throwError: T
+): T extends false ? Handler<any, any, any, any> | undefined : Handler<any, any, any, any> => {
 	if (!router) {
 		throw error('NOT_FOUND', 'router not found');
 	}
@@ -59,7 +63,10 @@ export const getHandler = (router: AnyRouter | undefined, path: string[]) => {
 	});
 
 	if (!handler || !isHandler(handler)) {
-		throw error('NOT_FOUND', 'handler not found');
+		if (throwError) {
+			throw error('NOT_FOUND', 'handler not found');
+		}
+		return undefined as T extends false ? Handler<any, any, any, any> | undefined : Handler<any, any, any, any>;
 	}
 	return handler;
 };

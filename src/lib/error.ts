@@ -1,3 +1,5 @@
+import { WS_ERROR_TYPE } from './constants';
+import { stringify } from './transform';
 import { tryParse } from './utils/tryParse';
 
 export type ErrorResponse = {
@@ -105,4 +107,8 @@ export const handleError = (error: unknown) => {
 		status,
 		statusText,
 	});
+};
+
+export const websocketError = (code: ERROR, message?: string) => {
+	return stringify({ type: WS_ERROR_TYPE, error: { code, message } });
 };
