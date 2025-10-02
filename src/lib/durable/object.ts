@@ -70,21 +70,21 @@ export class DurableServer<
 
 export type AnyDurableServer = DurableServer<any, any, any, any>;
 
-const out = createRouter('schedule')
-	.procedure()
-	.input(
-		object({
-			value: string(),
-		})
-	)
-	.handle(async ({ input, event }) => {
-		return input;
-	});
+// const out = createRouter('schedule')
+// 	.procedure()
+// 	.input(
+// 		object({
+// 			value: string(),
+// 		})
+// 	)
+// 	.handle(async ({ input, event }) => {
+// 		return input;
+// 	});
 
-const router = {
-	alarm: out,
-};
+// const router = {
+// 	alarm: out,
+// };
 
-const x = {} as DurableServer<any, typeof router, any>;
+// const x = {} as DurableServer<any, typeof router, any>;
 
-x.schedule.alarm({ value: 'coucou' }, { cron: '* * * * *' });
+// x.schedule.alarm({ value: 'coucou' }, { cron: '* * * * *' });
