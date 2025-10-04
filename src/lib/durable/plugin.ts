@@ -32,56 +32,25 @@ export class DurablePlugin {
 	declare expose?: Record<string, any>;
 }
 
-const t = createRouter('worker');
-const w = createRouter('out');
-
-class Plugin1 extends DurablePlugin {
-	router = {
-		test1: t
-			.procedure()
-			.input(any())
-			.handle(async () => {
-				return 'coucou';
-			}),
-	};
-	ws_out = {
-		test1: t
-			.procedure()
-			.input(any())
-			.handle(async () => {
-				return 'coucou';
-			}),
-	};
-}
-
-class Plugin2 extends DurablePlugin {
-	router = {
-		test2: t
-			.procedure()
-			.input(string())
-			.handle(async () => {
-				return 'coucou';
-			}),
-	};
-	ws_out = {
-		test: w
-			.procedure()
-			.input(string())
-			.handle(async () => {
-				return {
-					data: 'coucou',
-				};
-			}),
-	};
-}
-
-const plugins = [new Plugin1(), new Plugin2()];
-
 type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (k: infer I) => void ? I : never;
 
 export type ExtractPluggedRouters<K extends 'router' | 'ws_in' | 'ws_out' | 'tasks', P extends DurablePlugin[]> = AsAnyRouter<
 	UnionToIntersection<Exclude<P[number][K], undefined>>
 >;
+
+type AsAnyRouter<T> = T extends AnyRouter ? T : never;
+
+type InferAllRouters<
+	D extends AnyDurableServer,
+	PLUGINS extends DurablePlugin[],
+	key extends 'router' | 'ws_in' | 'ws_out' | 'tasks'
+> = D[key] extends AnyRouter
+	? ExtractPluggedRouters<key, PLUGINS> extends AnyRouter
+		? D[key] & ExtractPluggedRouters<key, PLUGINS>
+		: D[key]
+	: ExtractPluggedRouters<key, PLUGINS> extends AnyRouter
+	? ExtractPluggedRouters<key, PLUGINS>
+	: never;
 
 const mergePlugins = <Plugins extends DurablePlugin[]>(...plugins: Plugins) => {
 	const { router, ws_in, ws_out, tasks } = plugins.reduce(
@@ -108,10 +77,10 @@ const mergePlugins = <Plugins extends DurablePlugin[]>(...plugins: Plugins) => {
 		} as { router: AnyRouter[]; ws_in: AnyRouter[]; ws_out: AnyRouter[]; tasks: AnyRouter[] }
 	);
 	return {
-		router: mergeRouters(...router) || {},
-		ws_in: mergeRouters(...ws_in) || {},
-		ws_out: mergeRouters(...ws_out) || {},
-		tasks: mergeRouters(...tasks) || {},
+		router: mergeRouters.apply(null, router) || {},
+		ws_in: mergeRouters.apply(null, ws_in) || {},
+		ws_out: mergeRouters.apply(null, ws_out) || {},
+		tasks: mergeRouters.apply(null, tasks) || {},
 	} as {
 		router: ExtractPluggedRouters<'router', Plugins>;
 		ws_in: ExtractPluggedRouters<'ws_in', Plugins>;
@@ -130,78 +99,15 @@ export const createDurableObject = <PLUGINS extends DurablePlugin[]>(...plugins:
 		PLUGINS
 	> {
 		plugins: PLUGINS = plugins;
-		declare ws: WS_API<InferAllRouters<Self, 'ws_out'>>;
-		plugged_router = merged.router;
-		plugged_ws_in = merged.ws_in;
-		plugged_ws_out = merged.ws_out;
-		plugged_tasks = merged.tasks;
+		declare send: WS_API<InferAllRouters<Self, PLUGINS, 'ws_out'>>;
 		constructor(ctx: DurableObjectState, env: Env) {
 			super(ctx, env);
+			this.router = Object.assign(this.router, merged.router);
+			this.ws_in = Object.assign(this.ws_in, merged.ws_in);
+			this.ws_out = Object.assign(this.ws_out, merged.ws_out);
+			this.tasks = Object.assign(this.tasks, merged.tasks);
 		}
 	}
 
 	return DurableObjectWithPlugins;
 };
-
-export class MyDurableObject extends createDurableObject(...plugins)<MyDurableObject> {
-	// ws_out = {
-	// 	test4: w
-	// 		.procedure()
-	// 		.input(string())
-	// 		.handle(async (input) => {
-	// 			return `coucou ${input}`;
-	// 		}),
-	// };
-
-	constructor(ctx: DurableObjectState, env: Env) {
-		super(ctx, env);
-		// const t = this.ws.send.test('coucou', { to: ['elzk'] });
-	}
-
-	router = {
-		test: createRouter('worker')
-			.procedure()
-			.input(any())
-			.handle(async () => {
-				return 'coucou';
-			}),
-	};
-}
-
-type AsAnyRouter<T> = T extends AnyRouter ? T : never;
-
-type InferAllRouters<D extends AnyDurableServer, key extends 'router' | 'ws_in' | 'ws_out' | 'tasks'> = D[key] extends AnyRouter
-	? D[`plugged_${key}`] extends AnyRouter
-		? D[key] & D[`plugged_${key}`]
-		: D[key]
-	: D[`plugged_${key}`] extends AnyRouter
-	? D[`plugged_${key}`]
-	: never;
-
-type ExtractDurableObjectMergedRouter<T, key extends 'router' | 'ws_in' | 'ws_out' | 'tasks'> = T extends new (
-	ctx: DurableObjectState,
-	env: Env
-) => infer D
-	? D extends AnyDurableServer
-		? InferAllRouters<D, key>
-		: never
-	: never;
-
-const worker = {
-	DURABLE_OBJECT: MyDurableObject,
-};
-
-type Worker = typeof worker;
-type T = Worker['DURABLE_OBJECT'];
-
-type TT = ExtractDurableObjectMergedRouter<T, 'ws_out'>;
-
-type Test<T, key extends 'router' | 'ws_in' | 'ws_out' | 'tasks'> = T extends new (ctx: DurableObjectState, env: Env) => infer D
-	? D extends AnyDurableServer
-		? D[key] extends undefined
-			? true
-			: never
-		: never
-	: never;
-
-type TTT = Test<T, 'ws_out'>;

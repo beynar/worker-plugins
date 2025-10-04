@@ -16,24 +16,20 @@ export abstract class DurableServer<
 > extends DurableObject<any, any> {
 	// ROUTER
 	declare router: ROUTER;
-	declare plugged_router: ExtractPluggedRouters<'router', PLUGINS>;
 	// ROUTER
 
 	// WS_IN
 	declare ws_in: WS_IN;
-	declare plugged_ws_in: ExtractPluggedRouters<'ws_in', PLUGINS>;
 	// WS_IN
 
 	// WS_OUT
 	declare ws_out: WS_OUT;
-	declare plugged_ws_out: ExtractPluggedRouters<'ws_out', PLUGINS>;
-	// declare ws: WS_API<WS_OUT & ExtractPluggedRouters<'ws_out', PLUGINS>>;
-	declare ws: WS_API<WS_OUT>;
+	declare send: WS_API<WS_OUT>;
+
 	// WS_OUT
 
 	// TASKS
 	declare tasks: TASKS;
-	declare plugged_tasks: ExtractPluggedRouters<'tasks', PLUGINS>;
 	// TASKS
 
 	kv: DurableKV;

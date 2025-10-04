@@ -11,7 +11,9 @@ export type ApiResult<T> = Promise<[Awaited<T>, null] | [null, ErrorResponse]>;
 export type StreamCallback<S = any> = ({ chunk, first }: { chunk: S; first: boolean }) => void;
 
 type WithOpts<Func extends (...args: any[]) => any, Opts extends StandardSchemaV1 | undefined = undefined> = Opts extends StandardSchemaV1
-	? (p: Parameters<Func>[0], opts: StandardSchemaV1.InferInput<Opts>) => ReturnType<Func>
+	? StandardSchemaV1.InferInput<Opts> extends infer T | undefined
+		? (p: Parameters<Func>[0], opts?: T) => ReturnType<Func>
+		: (p: Parameters<Func>[0], opts: StandardSchemaV1.InferInput<Opts>) => ReturnType<Func>
 	: Func;
 
 export type API<R extends AnyRouter = AnyRouter, Opts extends StandardSchemaV1 | undefined = undefined> = {
@@ -71,7 +73,7 @@ export const createApi = <R extends AnyRouter | undefined, Opts extends Standard
 }): R extends undefined ? never : R extends AnyRouter ? API<R, Opts> : never => {
 	if (!isAnyRouter(router)) return {} as never;
 	return recursiveProxy<Opts>(async ({ type, path, data, opts }) => {
-		const handler = getHandler(router, path);
+		const handler = getHandler(router, path, true);
 		const parsedData = await validate(handler.schema, data);
 		const parsedOptions = options ? await validate(options, opts) : undefined;
 

@@ -22,7 +22,7 @@ export type Tags = Register extends {
 const sendOptions = object({
 	to: array(string()).optional(),
 	omit: array(string()).optional(),
-});
+}).optional();
 
 export const serializeSession = (ws: WebSocket, value: Session) => {
 	ws.serializeAttachment(stringify(value));
@@ -32,63 +32,58 @@ export const deserializeSession = (ws: WebSocket): Session => {
 	return parse(ws.deserializeAttachment()) as Session;
 };
 
-export type WS_API<Out extends AnyRouter | undefined = undefined> = {
-	send: Out extends AnyRouter ? API<Out, typeof sendOptions> : undefined;
-	broadcast: Out extends AnyRouter ? API<Out> : undefined;
-};
+export type WS_API<Out extends AnyRouter | undefined = undefined> = Out extends AnyRouter ? API<Out, typeof sendOptions> : undefined;
 
 export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out extends AnyRouter | undefined = undefined> {
 	private server: DurableServer<any, any, In, Out, DurablePlugin[]>;
 
 	constructor(server: DurableServer<any, any, In, Out, DurablePlugin[]>) {
 		this.server = server;
-		this.server.ws = {
-			send: createApi({
-				router: server.ws_out,
-				callback: async ({ data, opts, handler, path }) => {
-					const { to, omit } = opts;
-					const sessions = this.getSessions(typeof to === 'string' && to !== 'ALL' ? to : undefined).filter(
-						typeof to === 'function'
-							? to
-							: ({ session }) => {
-									if (omit && omit.length > 0) {
-										return !omit.includes(session.participant.id);
-									} else if (Array.isArray(to)) {
-										return to.includes(session.participant.id);
-									}
-									return true;
-							  }
-					);
-
-					if (sessions.length) {
-						const event: WebsocketOutputRequestEvent = {
-							to: sessions,
-							env: this.server.env,
-							ctx: this.server.ctx,
-						};
-						const ctx = await handler?.call(event, data);
-						sessions.forEach(({ ws }) => {
-							ws.send(stringify({ type: path.join('.'), data, ctx }));
-						});
+		this.server.send = createApi({
+			router: server.ws_out,
+			callback: async ({ data, opts = { to: 'ALL' }, handler, path }) => {
+				const { to, omit } = opts;
+				const sessions = this.getSessions().filter(({ session }) => {
+					if (to === 'ALL') return true;
+					if (omit && omit.length > 0) {
+						return !omit.includes(session.participant.id);
+					} else if (Array.isArray(to)) {
+						return to.includes(session.participant.id);
 					}
-				},
-				options: sendOptions,
-			}),
-			broadcast: createApi({
-				router: server.ws_out,
-				callback: async ({ data, handler, path }) => {
+					return true;
+				});
+
+				if (sessions.length) {
 					const event: WebsocketOutputRequestEvent = {
-						to: this.getSessions(),
+						to: sessions,
 						env: this.server.env,
 						ctx: this.server.ctx,
 					};
 					const ctx = await handler?.call(event, data);
-					event.to.forEach(({ ws }) => {
+					sessions.forEach(({ ws }) => {
 						ws.send(stringify({ type: path.join('.'), data, ctx }));
 					});
-				},
-			}),
-		};
+				}
+			},
+			options: sendOptions,
+		});
+
+		// const x = {
+		// 	broadcast: createApi({
+		// 		router: server.ws_out,
+		// 		callback: async ({ data, handler, path }) => {
+		// 			const event: WebsocketOutputRequestEvent = {
+		// 				to: this.getSessions(),
+		// 				env: this.server.env,
+		// 				ctx: this.server.ctx,
+		// 			};
+		// 			const ctx = await handler?.call(event, data);
+		// 			event.to.forEach(({ ws }) => {
+		// 				ws.send(stringify({ type: path.join('.'), data, ctx }));
+		// 			});
+		// 		},
+		// 	}),
+		// };
 	}
 
 	init = async () => {

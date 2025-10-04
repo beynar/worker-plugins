@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import { createRouter } from './lib/rpc/router';
-import { any } from 'zod';
+import { any, string } from 'zod';
 import { createDurableObject, DurablePlugin } from './lib/durable/plugin';
 
 /**
@@ -33,7 +33,7 @@ class Plugin1 extends DurablePlugin {
 	ws_out = {
 		test1: t
 			.procedure()
-			.input(any())
+			.input(string())
 			.handle(async () => {
 				return 'coucou';
 			}),
@@ -63,19 +63,20 @@ class Plugin2 extends DurablePlugin {
 
 const plugins = [new Plugin1(), new Plugin2()];
 export class MyDurableObject extends createDurableObject(...plugins)<MyDurableObject> {
-	// ws_out = {
-	// 	test4: w
-	// 		.procedure()
-	// 		.input(string())
-	// 		.handle(async (input) => {
-	// 			return `coucou ${input}`;
-	// 		}),
-	// };
+	ws_out = {
+		test4: w
+			.procedure()
+			.input(any())
+			.handle(async (input) => {
+				return `coucou ${input}`;
+			}),
+	};
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 
-		// const t = this.ws.send.test('coucou', { to: ['elzk'] });
+		const t = this.send.test1('coucou', { to: ['ALL'] });
+		const t2 = this.send.test1('coucou');
 	}
 
 	sayHello(s: string) {
