@@ -152,7 +152,7 @@ export class Scheduler<Tasks extends AnyRouter | undefined = undefined> {
       ORDER BY time ASC
       LIMIT 1
     `;
-		const result = this.storage.sql.exec<SqlTask>(query, [Math.floor(Date.now() / 1000)]).one();
+		const [result] = this.storage.sql.exec<SqlTask>(query, [Math.floor(Date.now() / 1000)]).toArray();
 		if (!result || !result.time) return;
 
 		await this.storage.setAlarm(result.time * 1000);
@@ -205,6 +205,13 @@ export class Scheduler<Tasks extends AnyRouter | undefined = undefined> {
 
 		// Get all tasks that should be executed now
 		const tasks = this.storage.sql.exec<SqlTask>('SELECT * FROM tasks WHERE time <= ?', [now]).toArray();
+
+		this.server.plugins?.forEach((plugin) => {
+			plugin.onAlarm?.({
+				env: this.server.env,
+				ctx: this.server.ctx,
+			});
+		});
 
 		for (const row of tasks || []) {
 			const task = this.rowToTask(row);

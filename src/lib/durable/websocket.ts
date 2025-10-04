@@ -11,6 +11,7 @@ import { Register } from '..';
 import { getHandler } from '../rpc/handler';
 import { validate } from '../utils/validate';
 import { WS_PRESENCE_TYPE, WS_RESPONSE_TYPE } from '../constants';
+import { DurablePlugin } from './plugin';
 
 export type Tags = Register extends {
 	Tags: infer _Tags;
@@ -37,9 +38,9 @@ export type WS_API<Out extends AnyRouter | undefined = undefined> = {
 };
 
 export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out extends AnyRouter | undefined = undefined> {
-	private server: DurableServer<any, any, In, Out>;
+	private server: DurableServer<any, any, In, Out, DurablePlugin[]>;
 
-	constructor(server: DurableServer<any, any, In, Out>) {
+	constructor(server: DurableServer<any, any, In, Out, DurablePlugin[]>) {
 		this.server = server;
 		this.server.ws = {
 			send: createApi({
@@ -124,7 +125,7 @@ export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out 
 
 	async onWebSocketError(ws: WebSocket, error: unknown) {
 		this.server.plugins?.forEach((plugin) => {
-			plugin.onWebSocketError?.(ws, error);
+			plugin.onWebSocketError?.({ ws, error, session: deserializeSession(ws) });
 		});
 		setTimeout(() => {
 			this.sendPresence();
@@ -132,7 +133,7 @@ export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out 
 	}
 	async onWebSocketClose(ws: WebSocket, code: number, reason: string) {
 		this.server.plugins?.forEach((plugin) => {
-			plugin.onWebSocketClose?.(ws, code, reason);
+			plugin.onWebSocketClose?.({ ws, code, reason, session: deserializeSession(ws) });
 		});
 		setTimeout(() => {
 			this.sendPresence();
@@ -212,7 +213,9 @@ export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out 
 
 			this.sendPresence();
 
-			// this.onConnectionOpen?.(server, session);
+			this.server.plugins?.forEach((plugin) => {
+				plugin.onWebSocketOpen?.({ ...event, ws: server, session: session! });
+			});
 
 			return withCookies(
 				new Response(null, {

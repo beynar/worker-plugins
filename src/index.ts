@@ -1,4 +1,7 @@
-import { DurableObject } from "cloudflare:workers";
+import { DurableObject } from 'cloudflare:workers';
+import { createRouter } from './lib/rpc/router';
+import { any } from 'zod';
+import { createDurableObject, DurablePlugin } from './lib/durable/plugin';
 
 /**
  * Welcome to Cloudflare Workers! This is your first Durable Objects application.
@@ -13,30 +16,80 @@ import { DurableObject } from "cloudflare:workers";
  * Learn more at https://developers.cloudflare.com/durable-objects
  */
 
-
 /** A Durable Object's behavior is defined in an exported Javascript class */
-export class MyDurableObject extends DurableObject {
-	/**
-	 * The constructor is invoked once upon creation of the Durable Object, i.e. the first call to
-	 * 	`DurableObjectStub::get` for a given identifier (no-op constructors can be omitted)
-	 *
-	 * @param ctx - The interface for interacting with Durable Object state
-	 * @param env - The interface to reference bindings declared in wrangler.jsonc
-	 */
+
+const t = createRouter('worker');
+const w = createRouter('out');
+
+class Plugin1 extends DurablePlugin {
+	router = {
+		test1: t
+			.procedure()
+			.input(any())
+			.handle(async () => {
+				return 'coucou';
+			}),
+	};
+	ws_out = {
+		test1: t
+			.procedure()
+			.input(any())
+			.handle(async () => {
+				return 'coucou';
+			}),
+	};
+}
+
+class Plugin2 extends DurablePlugin {
+	router = {
+		test2: t
+			.procedure()
+			.input(any())
+			.handle(async () => {
+				return 'coucou';
+			}),
+	};
+	ws_out = {
+		test: w
+			.procedure()
+			.input(any())
+			.handle(async () => {
+				return {
+					data: 'coucou',
+				};
+			}),
+	};
+}
+
+const plugins = [new Plugin1(), new Plugin2()];
+export class MyDurableObject extends createDurableObject(...plugins)<MyDurableObject> {
+	// ws_out = {
+	// 	test4: w
+	// 		.procedure()
+	// 		.input(string())
+	// 		.handle(async (input) => {
+	// 			return `coucou ${input}`;
+	// 		}),
+	// };
+
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
+
+		// const t = this.ws.send.test('coucou', { to: ['elzk'] });
 	}
 
-	/**
-	 * The Durable Object exposes an RPC method sayHello which will be invoked when when a Durable
-	 *  Object instance receives a request from a Worker via the same method invocation on the stub
-	 *
-	 * @param name - The name provided to a Durable Object instance from a Worker
-	 * @returns The greeting to be sent back to the Worker
-	 */
-	async sayHello(name: string): Promise<string> {
-		return `Hello, ${name}!`;
+	sayHello(s: string) {
+		return 'coucou';
 	}
+
+	router = {
+		test: createRouter('worker')
+			.procedure()
+			.input(any())
+			.handle(async () => {
+				return 'coucou';
+			}),
+	};
 }
 
 export default {
@@ -54,11 +107,11 @@ export default {
 		//
 		// Requests from all Workers to the Durable Object instance named "foo"
 		// will go to a single remote Durable Object instance.
-		const stub = env.MY_DURABLE_OBJECT.getByName("foo");
+		const stub = env.MY_DURABLE_OBJECT.getByName('foo');
 
 		// Call the `sayHello()` RPC method on the stub to invoke the method on
 		// the remote Durable Object instance.
-		const greeting = await stub.sayHello("world");
+		const greeting = await stub.sayHello('world');
 
 		return new Response(greeting);
 	},

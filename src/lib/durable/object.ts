@@ -2,27 +2,48 @@ import { DurableObject } from 'cloudflare:workers';
 import { WebsocketManager, WS_API } from './websocket';
 import { DurableKV } from './kv';
 import { Scheduler } from './scheduler';
-import { AnyRouter, createRouter } from '../rpc/router';
+import { AnyRouter, createRouter, mergeRouters } from '../rpc/router';
 import { createDurableRequestEvent, DurableMeta, DurableRequest, DurableRequestEvent } from '../rpc/requestEvent';
 import { object, string } from 'zod';
+import { DurablePlugin, ExtractPluggedRouters } from './plugin';
 
-export class DurableServer<
-	Router extends AnyRouter | undefined = undefined,
-	Tasks extends AnyRouter | undefined = undefined,
+export abstract class DurableServer<
+	ROUTER extends AnyRouter | undefined = undefined,
+	TASKS extends AnyRouter | undefined = undefined,
 	WS_IN extends AnyRouter | undefined = undefined,
-	WS_OUT extends AnyRouter | undefined = undefined
+	WS_OUT extends AnyRouter | undefined = undefined,
+	PLUGINS extends DurablePlugin[] = DurablePlugin[]
 > extends DurableObject<any, any> {
-	schedule: Scheduler<Tasks>['schedule'];
+	// ROUTER
+	declare router: ROUTER;
+	declare plugged_router: ExtractPluggedRouters<'router', PLUGINS>;
+	// ROUTER
+
+	// WS_IN
+	declare ws_in: WS_IN;
+	declare plugged_ws_in: ExtractPluggedRouters<'ws_in', PLUGINS>;
+	// WS_IN
+
+	// WS_OUT
+	declare ws_out: WS_OUT;
+	declare plugged_ws_out: ExtractPluggedRouters<'ws_out', PLUGINS>;
+	// declare ws: WS_API<WS_OUT & ExtractPluggedRouters<'ws_out', PLUGINS>>;
+	declare ws: WS_API<WS_OUT>;
+	// WS_OUT
+
+	// TASKS
+	declare tasks: TASKS;
+	declare plugged_tasks: ExtractPluggedRouters<'tasks', PLUGINS>;
+	// TASKS
+
 	kv: DurableKV;
 	private websocketManager: WebsocketManager<WS_IN, WS_OUT>;
-	private scheduler: Scheduler<Tasks>;
+	private scheduler: Scheduler<TASKS>;
+	schedule: Scheduler<TASKS>['schedule'];
 
-	declare plugins?: any[];
-	declare tasks: Tasks;
-	declare router: Router;
-	declare ws_in: WS_IN;
-	declare ws_out: WS_OUT;
-	declare ws: WS_API<WS_OUT>;
+	declare plugins: PLUGINS;
+
+	// abstract router: Router;
 
 	declare getSessionDataAndParticipant?: (event: DurableRequestEvent) => Promise<{ session: any; participant: any; tags: string[] }>;
 
@@ -68,7 +89,7 @@ export class DurableServer<
 	}
 }
 
-export type AnyDurableServer = DurableServer<any, any, any, any>;
+export type AnyDurableServer = DurableServer<any, any, any, any, any>;
 
 // const out = createRouter('schedule')
 // 	.procedure()
