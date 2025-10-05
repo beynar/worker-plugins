@@ -56,8 +56,7 @@ export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out 
 				if (sessions.length) {
 					const event: WebsocketOutputRequestEvent = {
 						to: sessions,
-						env: this.server.env,
-						ctx: this.server.ctx,
+						server: this.server,
 					};
 					const ctx = await handler?.call(event, data);
 					sessions.forEach(({ ws }) => {
@@ -119,17 +118,15 @@ export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out 
 	};
 
 	async onWebSocketError(ws: WebSocket, error: unknown) {
-		this.server.plugins?.forEach((plugin) => {
-			plugin.onWebSocketError?.({ ws, error, session: deserializeSession(ws) });
-		});
+		const session = deserializeSession(ws);
+		await this.server.invokePlugins('onWebSocketError', { ws, error, session, server: this.server });
 		setTimeout(() => {
 			this.sendPresence();
 		});
 	}
 	async onWebSocketClose(ws: WebSocket, code: number, reason: string) {
-		this.server.plugins?.forEach((plugin) => {
-			plugin.onWebSocketClose?.({ ws, code, reason, session: deserializeSession(ws) });
-		});
+		const session = deserializeSession(ws);
+		await this.server.invokePlugins('onWebSocketClose', { ws, code, reason, session, server: this.server });
 		setTimeout(() => {
 			this.sendPresence();
 		});
@@ -141,29 +138,25 @@ export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out 
 			const event: WebsocketInputRequestEvent = {
 				ws,
 				session,
-				env: this.server.env,
-				ctx: this.server.ctx,
+				server: this.server,
 			};
 			if (typeof message !== 'string') {
-				return this.server.plugins?.forEach((plugin) => {
-					plugin.onArrayBufferMessage?.({
-						...event,
-						isHandled: false,
-						input: message as ArrayBuffer,
-					});
+				await this.server.invokePlugins('onArrayBufferMessage', {
+					event,
+					isHandled: false,
+					input: message as ArrayBuffer,
 				});
 			}
 			const { type: messageType, data: messageData, id: messageId } = parse(message as string);
 			const handler = getHandler(this.server.ws_in, messageType.split('.'), false);
 			const parsedData = await validate(handler?.schema, messageData);
 
-			this.server.plugins?.forEach((plugin) => {
-				plugin.onWebSocketMessage?.({
-					...event,
-					input: parsedData,
-					isHandled: !!handler,
-				});
+			await this.server.invokePlugins('onWebSocketMessage', {
+				event,
+				input: parsedData,
+				isHandled: !!handler,
 			});
+
 			if (handler) {
 				const response = await handler?.call(event, parsedData);
 				ws.send(stringify({ type: WS_RESPONSE_TYPE, data: response, id: messageId }));
@@ -208,8 +201,9 @@ export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out 
 
 			this.sendPresence();
 
-			this.server.plugins?.forEach((plugin) => {
-				plugin.onWebSocketOpen?.({ ...event, ws: server, session: session! });
+			await this.server.invokePlugins('onWebSocketOpen', {
+				event,
+				session,
 			});
 
 			return withCookies(

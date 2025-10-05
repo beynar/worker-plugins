@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { createRouter } from './lib/rpc/router';
 import { any, string } from 'zod';
 import { createDurableObject, DurablePlugin } from './lib/durable/plugin';
+import { AnyDurableServer } from './lib/durable/object';
 
 /**
  * Welcome to Cloudflare Workers! This is your first Durable Objects application.
@@ -38,6 +39,11 @@ class Plugin1 extends DurablePlugin {
 				return 'coucou';
 			}),
 	};
+
+	expose = {
+		test1: 'hello',
+		caca1: true,
+	};
 }
 
 class Plugin2 extends DurablePlugin {
@@ -59,6 +65,10 @@ class Plugin2 extends DurablePlugin {
 				};
 			}),
 	};
+	expose = {
+		test: 'hello',
+		caca: true,
+	};
 }
 
 const plugins = [new Plugin1(), new Plugin2()];
@@ -77,7 +87,7 @@ export class MyDurableObject extends createDurableObject(...plugins)<MyDurableOb
 	}
 
 	sayHello(s: string) {
-		return 'coucou';
+		return this.get('test');
 	}
 
 	router = {
@@ -90,25 +100,21 @@ export class MyDurableObject extends createDurableObject(...plugins)<MyDurableOb
 	};
 }
 
-export default {
-	/**
-	 * This is the standard fetch handler for a Cloudflare Worker
-	 *
-	 * @param request - The request submitted to the Worker from the client
-	 * @param env - The interface to reference bindings declared in wrangler.jsonc
-	 * @param ctx - The execution context of the Worker
-	 * @returns The response to be sent back to the client
-	 */
-	async fetch(request, env, ctx): Promise<Response> {
-		// Create a stub to open a communication channel with the Durable Object
-		// instance named "foo".
-		//
-		// Requests from all Workers to the Durable Object instance named "foo"
-		// will go to a single remote Durable Object instance.
-		const stub = env.MY_DURABLE_OBJECT.getByName('foo');
+const objects = {
+	test: MyDurableObject,
+};
 
-		// Call the `sayHello()` RPC method on the stub to invoke the method on
-		// the remote Durable Object instance.
+type InferDurableServer<T> = T extends new (ctx: DurableObjectState, env: Env) => infer R
+	? R extends AnyDurableServer
+		? R['infer']
+		: never
+	: never;
+
+type T = InferDurableServer<typeof objects.test>;
+
+export default {
+	async fetch(request, env, ctx): Promise<Response> {
+		const stub = env.MY_DURABLE_OBJECT.getByName('foo');
 		const greeting = await stub.sayHello('world');
 
 		return new Response(greeting);

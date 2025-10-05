@@ -5,7 +5,8 @@ import { Scheduler, TASK_API } from './scheduler';
 import { AnyRouter, createRouter, mergeRouters } from '../rpc/router';
 import { createDurableRequestEvent, DurableMeta, DurableRequest, DurableRequestEvent } from '../rpc/requestEvent';
 import { object, string } from 'zod';
-import { DurablePlugin, ExtractPluggedRouters } from './plugin';
+import { DurablePlugin, ExtractPluggedRouters, NonOptionalDurablePlugin, PluginFunctions } from './plugin';
+import { MaybePromise } from '../utils/types';
 
 export class DurableServer<
 	ROUTER extends AnyRouter | undefined = undefined,
@@ -25,6 +26,12 @@ export class DurableServer<
 	private websocketManager: WebsocketManager<WS_IN, WS_OUT>;
 	kv: DurableKV;
 
+	declare infer: {
+		router: AnyRouter;
+		ws_in: AnyRouter;
+		ws_out: AnyRouter;
+		tasks: AnyRouter;
+	};
 	declare getSessionDataAndParticipant?: (event: DurableRequestEvent) => Promise<{ session: any; participant: any; tags: string[] }>;
 
 	constructor(public ctx: DurableObjectState, public env: Env) {
@@ -36,16 +43,29 @@ export class DurableServer<
 			await this.websocketManager.init();
 			await this.kv.init();
 			await this.scheduler.init();
+			await this.invokePlugins('blockConcurrencyWhile', { server: this });
 		});
 	}
 
+	invokePlugins = <T extends PluginFunctions>(type: T, payload: Parameters<NonOptionalDurablePlugin[T]>[0]) => {
+		return Promise.all(
+			this.plugins.reduce((acc, p) => {
+				if (p[type]) {
+					const maybePromise = p[type]?.(payload as any);
+					if (maybePromise instanceof Promise) {
+						acc.push(maybePromise);
+					}
+				}
+
+				return acc;
+			}, [] as Promise<void>[])
+		);
+	};
+
 	// @ts-ignore
 	async fetch(request: DurableRequest): Promise<Response> {
-		const event = createDurableRequestEvent(request, this.env, this.ctx);
-		this.plugins?.forEach((plugin) => {
-			plugin.onFetch?.(event);
-		});
-
+		const event = createDurableRequestEvent(request, this);
+		await this.invokePlugins('onFetch', { event });
 		if (request.cf.isWebSocketConnect) {
 			return this.websocketManager.handleWebsocketConnection(event);
 		}
@@ -69,22 +89,3 @@ export class DurableServer<
 }
 
 export type AnyDurableServer = DurableServer<any, any, any, any, any>;
-
-// const out = createRouter('schedule')
-// 	.procedure()
-// 	.input(
-// 		object({
-// 			value: string(),
-// 		})
-// 	)
-// 	.handle(async ({ input, event }) => {
-// 		return input;
-// 	});
-
-// const router = {
-// 	alarm: out,
-// };
-
-// const x = {} as DurableServer<any, typeof router, any>;
-
-// x.schedule.alarm({ value: 'coucou' }, { cron: '* * * * *' });

@@ -86,25 +86,3 @@ export const createApi = <R extends AnyRouter | undefined, Opts extends Standard
 		});
 	}) as R extends undefined ? never : R extends AnyRouter ? API<R, Opts> : never;
 };
-
-// const router = createRouter('schedule');
-// const r = {
-// 	task: router
-// 		.procedure()
-// 		.input(z.object({ test: z.string() }))
-// 		.handle(({ input, event }) => {
-// 			return {
-// 				data: "helloe"
-// 			}
-// 		}),
-// };
-// const api = createApi({
-// 	router: r,
-// 	callback: ({ type, path, data, opts, handler }) => {},
-// 	options: z.union([
-// 		z.object({ at: z.date(), in: z.never().optional(), cron: z.never().optional() }).strict(),
-// 		z.object({ in: z.number(), at: z.never().optional(), cron: z.never().optional() }).strict(),
-// 		z.object({ cron: z.string(), at: z.never().optional(), in: z.never().optional() }).strict(),
-// 	]),
-// 	// options: z.object({ at: z.date() })
-// });

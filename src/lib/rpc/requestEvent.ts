@@ -1,9 +1,11 @@
-import { DurableServer, ServerOptions } from '.';
+// import {  ServerOptions } from '.';
+type ServerOptions = any;
 import { Cookies } from '../cookies';
 import type { Request as CfRequest } from '@cloudflare/workers-types';
 import { ProcedureType } from './procedure';
 import { Register } from '..';
 import { MaybePromise } from '../utils/types';
+import { AnyDurableServer, DurableServer } from '../durable/object';
 
 export type DurableRequest = CfRequest & { cf: { meta: DurableMeta; isWebSocketConnect: boolean } };
 
@@ -63,14 +65,12 @@ export type CronRequestEvent = ScheduledController & {
 };
 
 export type ScheduleRequestEvent = {
-	ctx: DurableObjectState;
-	env: Env;
+	server: AnyDurableServer;
 };
 
 export type DurableRequestEvent = {
 	request: CfRequest;
-	env: Env;
-	ctx: DurableObjectState;
+	server: AnyDurableServer;
 	path: string[];
 	meta: Meta;
 	url: URL;
@@ -79,15 +79,13 @@ export type DurableRequestEvent = {
 
 export type WebsocketOutputRequestEvent = {
 	to: { session: Session; ws: WebSocket }[];
-	env: Env;
-	ctx: DurableObjectState;
+	server: AnyDurableServer;
 };
 
 export type WebsocketInputRequestEvent = {
 	ws: WebSocket;
 	session: Session;
-	env: Env;
-	ctx: DurableObjectState;
+	server: AnyDurableServer;
 };
 
 export type QueueRequestEvent = {
@@ -192,14 +190,13 @@ export const buildEvent = async (
 	return event;
 };
 
-export const createDurableRequestEvent = (request: DurableRequest, env: Env, ctx: DurableObjectState): DurableRequestEvent => {
+export const createDurableRequestEvent = (request: DurableRequest, server: AnyDurableServer): DurableRequestEvent => {
 	const url = new URL(request.url);
 	const path = url.pathname.split('/').filter(Boolean);
 
 	return {
-		ctx,
 		cookies: new Cookies(request),
-		env,
+		server,
 		meta: { name: null, id: null, jurisdiction: null, locationHint: null },
 		request,
 		url: new URL(request.url),

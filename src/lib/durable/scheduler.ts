@@ -207,11 +207,8 @@ export class Scheduler<Tasks extends AnyRouter | undefined = undefined> {
 		// Get all tasks that should be executed now
 		const tasks = this.storage.sql.exec<SqlTask>('SELECT * FROM tasks WHERE time <= ?', [now]).toArray();
 
-		this.server.plugins?.forEach((plugin) => {
-			plugin.onAlarm?.({
-				env: this.server.env,
-				ctx: this.server.ctx,
-			});
+		await this.server.invokePlugins('onAlarm', {
+			server: this.server,
 		});
 
 		for (const row of tasks || []) {
@@ -304,8 +301,7 @@ export class Scheduler<Tasks extends AnyRouter | undefined = undefined> {
 			const { handler: handlerPath } = task;
 			const handler = getHandler(this.server.tasks, handlerPath.split('.'), true);
 			const event: ScheduleRequestEvent = {
-				ctx: this.server.ctx,
-				env: this.server.env,
+				server: this.server,
 			};
 			await handler.call(event, task.payload);
 			return true;
