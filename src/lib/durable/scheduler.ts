@@ -80,15 +80,16 @@ const options = union([
 	object({ cron: string(), at: optional(date()), in: optional(number()) }),
 ]);
 
+export type TASK_API<TASKS extends AnyRouter | undefined = undefined> = TASKS extends AnyRouter ? API<TASKS, typeof options> : undefined;
+
 export class Scheduler<Tasks extends AnyRouter | undefined = undefined> {
 	storage: DurableObjectStorage;
-	schedule: Tasks extends AnyRouter ? API<Tasks, typeof options> : undefined;
 	private server: DurableServer<any, Tasks, any, any>;
 
 	constructor(server: DurableServer<any, Tasks, any, any>) {
 		this.server = server;
 		this.storage = server.ctx.storage;
-		this.schedule = createApi({
+		this.server.schedule = createApi({
 			router: server.tasks,
 			callback: async ({ handler, data, path, type, opts }) => {
 				if (opts.at) {

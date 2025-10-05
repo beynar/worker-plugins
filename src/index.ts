@@ -74,9 +74,6 @@ export class MyDurableObject extends createDurableObject(...plugins)<MyDurableOb
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-
-		const t = this.send.test1('coucou', { to: ['ALL'] });
-		const t2 = this.send.test1('coucou');
 	}
 
 	sayHello(s: string) {

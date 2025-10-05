@@ -1,8 +1,11 @@
-import { any, string } from 'zod';
+import { ZodMiniUnion, ZodMiniObject, ZodMiniDate, ZodMiniOptional, ZodMiniNumber, ZodMiniString } from 'zod/mini';
+import { $strip } from 'zod/v4/core';
+import { API } from '../rpc/api';
 import { DurableRequestEvent, Session, WebsocketInputRequestEvent } from '../rpc/requestEvent';
-import { AnyRouter, createRouter, mergeRouters, MergeRouters } from '../rpc/router';
+import { AnyRouter, mergeRouters, MergeRouters } from '../rpc/router';
 import { AnyDurableServer, DurableServer } from './object';
 import { WS_API } from './websocket';
+import { TASK_API } from './scheduler';
 
 export class DurablePlugin {
 	declare router?: AnyRouter;
@@ -34,11 +37,9 @@ export class DurablePlugin {
 
 type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (k: infer I) => void ? I : never;
 
-export type ExtractPluggedRouters<K extends 'router' | 'ws_in' | 'ws_out' | 'tasks', P extends DurablePlugin[]> = AsAnyRouter<
-	UnionToIntersection<Exclude<P[number][K], undefined>>
+export type ExtractPluggedRouters<K extends 'router' | 'ws_in' | 'ws_out' | 'tasks', P extends DurablePlugin[]> = UnionToIntersection<
+	Exclude<P[number][K], undefined>
 >;
-
-type AsAnyRouter<T> = T extends AnyRouter ? T : never;
 
 type InferAllRouters<
 	D extends AnyDurableServer,
@@ -100,6 +101,7 @@ export const createDurableObject = <PLUGINS extends DurablePlugin[]>(...plugins:
 	> {
 		plugins: PLUGINS = plugins;
 		declare send: WS_API<InferAllRouters<Self, PLUGINS, 'ws_out'>>;
+		declare schedule: TASK_API<InferAllRouters<Self, PLUGINS, 'tasks'>>;
 		constructor(ctx: DurableObjectState, env: Env) {
 			super(ctx, env);
 			this.router = Object.assign(this.router, merged.router);

@@ -1,54 +1,37 @@
 import { DurableObject } from 'cloudflare:workers';
 import { WebsocketManager, WS_API } from './websocket';
 import { DurableKV } from './kv';
-import { Scheduler } from './scheduler';
+import { Scheduler, TASK_API } from './scheduler';
 import { AnyRouter, createRouter, mergeRouters } from '../rpc/router';
 import { createDurableRequestEvent, DurableMeta, DurableRequest, DurableRequestEvent } from '../rpc/requestEvent';
 import { object, string } from 'zod';
 import { DurablePlugin, ExtractPluggedRouters } from './plugin';
 
-export abstract class DurableServer<
+export class DurableServer<
 	ROUTER extends AnyRouter | undefined = undefined,
 	TASKS extends AnyRouter | undefined = undefined,
 	WS_IN extends AnyRouter | undefined = undefined,
 	WS_OUT extends AnyRouter | undefined = undefined,
 	PLUGINS extends DurablePlugin[] = DurablePlugin[]
 > extends DurableObject<any, any> {
-	// ROUTER
+	declare plugins: PLUGINS;
 	declare router: ROUTER;
-	// ROUTER
-
-	// WS_IN
 	declare ws_in: WS_IN;
-	// WS_IN
-
-	// WS_OUT
 	declare ws_out: WS_OUT;
 	declare send: WS_API<WS_OUT>;
-
-	// WS_OUT
-
-	// TASKS
 	declare tasks: TASKS;
-	// TASKS
-
-	kv: DurableKV;
-	private websocketManager: WebsocketManager<WS_IN, WS_OUT>;
 	private scheduler: Scheduler<TASKS>;
-	schedule: Scheduler<TASKS>['schedule'];
-
-	declare plugins: PLUGINS;
-
-	// abstract router: Router;
+	declare schedule: TASK_API<TASKS>;
+	private websocketManager: WebsocketManager<WS_IN, WS_OUT>;
+	kv: DurableKV;
 
 	declare getSessionDataAndParticipant?: (event: DurableRequestEvent) => Promise<{ session: any; participant: any; tags: string[] }>;
 
 	constructor(public ctx: DurableObjectState, public env: Env) {
 		super(ctx, env);
-		this.websocketManager = new WebsocketManager(this);
 		this.kv = new DurableKV(ctx);
+		this.websocketManager = new WebsocketManager(this);
 		this.scheduler = new Scheduler(this);
-		this.schedule = this.scheduler.schedule;
 		this.ctx.blockConcurrencyWhile(async () => {
 			await this.websocketManager.init();
 			await this.kv.init();
