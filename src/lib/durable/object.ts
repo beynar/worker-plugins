@@ -5,8 +5,8 @@ import { Scheduler, TASK_API } from './scheduler';
 import { AnyRouter, createRouter, mergeRouters } from '../rpc/router';
 import { createDurableRequestEvent, DurableMeta, DurableRequest, DurableRequestEvent } from '../rpc/requestEvent';
 import { object, string } from 'zod';
-import { DurablePlugin, ExtractPluggedRouters, NonOptionalDurablePlugin, PluginFunctions } from './plugin';
-import { MaybePromise } from '../utils/types';
+import { DurablePlugin, ExtractPluggedRouters, NonOptionalDurablePlugin } from './plugin';
+import { ExtractFunctions, MaybePromise } from '../utils/types';
 
 export class DurableServer<
 	ROUTER extends AnyRouter | undefined = undefined,
@@ -47,7 +47,7 @@ export class DurableServer<
 		});
 	}
 
-	invokePlugins = <T extends PluginFunctions>(type: T, payload: Parameters<NonOptionalDurablePlugin[T]>[0]) => {
+	invokePlugins = <T extends ExtractFunctions<NonOptionalDurablePlugin>>(type: T, payload: Parameters<NonOptionalDurablePlugin[T]>[0]) => {
 		return Promise.all(
 			this.plugins.reduce((acc, p) => {
 				if (p[type]) {

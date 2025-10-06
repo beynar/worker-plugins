@@ -1,10 +1,8 @@
-import z from 'zod';
 import { Handler } from './handler';
 import { Middleware } from './middleware';
 import { Procedure, ProcedureType } from './procedure';
-import { API } from './api';
 
-export const createRouter = (procedureType: ProcedureType = 'worker') => {
+export const createRouter = <T extends ProcedureType>(procedureType: T) => {
 	return new Router(procedureType, undefined);
 };
 

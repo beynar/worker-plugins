@@ -1,4 +1,3 @@
-import { DurableObject } from 'cloudflare:workers';
 import { createRouter } from './lib/rpc/router';
 import { any, string } from 'zod';
 import { createDurableObject, DurablePlugin } from './lib/durable/plugin';
@@ -22,40 +21,40 @@ import { AnyDurableServer } from './lib/durable/object';
 const t = createRouter('worker');
 const w = createRouter('out');
 
-class Plugin1 extends DurablePlugin {
-	router = {
+const Plugin1 = {
+	router: {
 		test1: t
 			.procedure()
 			.input(any())
 			.handle(async () => {
 				return 'coucou';
 			}),
-	};
-	ws_out = {
+	},
+	ws_out: {
 		test1: t
 			.procedure()
 			.input(string())
 			.handle(async () => {
 				return 'coucou';
 			}),
-	};
+	},
 
-	expose = {
+	expose: {
 		test1: 'hello',
 		caca1: true,
-	};
-}
+	},
+};
 
-class Plugin2 extends DurablePlugin {
-	router = {
+const Plugin2 = {
+	router: {
 		test2: t
 			.procedure()
 			.input(any())
 			.handle(async () => {
 				return 'coucou';
 			}),
-	};
-	ws_out = {
+	},
+	ws_out: {
 		test: w
 			.procedure()
 			.input(any())
@@ -64,14 +63,24 @@ class Plugin2 extends DurablePlugin {
 					data: 'coucou',
 				};
 			}),
-	};
-	expose = {
+	},
+	expose: {
 		test: 'hello',
 		caca: true,
-	};
-}
+	},
+	tasks: {
+		task1: w
+			.procedure()
+			.input(any())
+			.handle(async () => {
+				return {
+					data: 'coucou',
+				};
+			}),
+	},
+} satisfies DurablePlugin;
 
-const plugins = [new Plugin1(), new Plugin2()];
+const plugins = [Plugin1, Plugin2];
 export class MyDurableObject extends createDurableObject(...plugins)<MyDurableObject> {
 	ws_out = {
 		test4: w
@@ -87,7 +96,8 @@ export class MyDurableObject extends createDurableObject(...plugins)<MyDurableOb
 	}
 
 	sayHello(s: string) {
-		return this.get('test');
+		const t = this.get('test');
+		return t;
 	}
 
 	router = {

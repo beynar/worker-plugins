@@ -3,31 +3,28 @@ import { AnyRouter, mergeRouters, MergeRouters } from '../rpc/router';
 import { AnyDurableServer, DurableServer } from './object';
 import { WS_API } from './websocket';
 import { TASK_API } from './scheduler';
-import { MaybePromise } from '../utils/types';
-export class DurablePlugin {
-	declare router?: AnyRouter;
-	declare ws_in?: AnyRouter;
-	declare ws_out?: AnyRouter;
-	declare tasks?: AnyRouter;
-	declare onFetch?: (opts: { event: DurableRequestEvent }) => MaybePromise<void>;
-	declare onAlarm?: (otps: { server: AnyDurableServer }) => MaybePromise<void>;
-	declare onWebSocketClose?: (opts: {
+import { MaybePromise, UnionToIntersection } from '../utils/types';
+
+export interface DurablePlugin {
+	router?: AnyRouter;
+	ws_in?: AnyRouter;
+	ws_out?: AnyRouter;
+	tasks?: AnyRouter;
+	onFetch?: (opts: { event: DurableRequestEvent }) => MaybePromise<void>;
+	onAlarm?: (otps: { server: AnyDurableServer }) => MaybePromise<void>;
+	onWebSocketClose?: (opts: {
 		ws: WebSocket;
 		code: number;
 		reason: string;
 		session: Session;
 		server: AnyDurableServer;
 	}) => MaybePromise<void>;
-	declare blockConcurrencyWhile?: (opts: { server: AnyDurableServer }) => MaybePromise<void>;
-	declare onWebSocketError?: (opts: { ws: WebSocket; error: unknown; session: Session; server: AnyDurableServer }) => MaybePromise<void>;
-	declare onWebSocketMessage?: (opts: { event: WebsocketInputRequestEvent; input: any; isHandled: boolean }) => MaybePromise<void>;
-	declare onArrayBufferMessage?: (opts: {
-		event: WebsocketInputRequestEvent;
-		input: ArrayBuffer;
-		isHandled: boolean;
-	}) => MaybePromise<void>;
-	declare onWebSocketOpen?: (opts: { event: DurableRequestEvent; session: Session }) => MaybePromise<void>;
-	expose?: Record<string, any> = undefined;
+	blockConcurrencyWhile?: (opts: { server: AnyDurableServer }) => MaybePromise<void>;
+	onWebSocketError?: (opts: { ws: WebSocket; error: unknown; session: Session; server: AnyDurableServer }) => MaybePromise<void>;
+	onWebSocketMessage?: (opts: { event: WebsocketInputRequestEvent; input: any; isHandled: boolean }) => MaybePromise<void>;
+	onArrayBufferMessage?: (opts: { event: WebsocketInputRequestEvent; input: ArrayBuffer; isHandled: boolean }) => MaybePromise<void>;
+	onWebSocketOpen?: (opts: { event: DurableRequestEvent; session: Session }) => MaybePromise<void>;
+	expose?: Record<string, any>;
 }
 export type NonOptionalDurablePlugin = {
 	[K in keyof DurablePlugin]-?: DurablePlugin[K];
@@ -35,8 +32,6 @@ export type NonOptionalDurablePlugin = {
 export type PluginFunctions = {
 	[K in keyof NonOptionalDurablePlugin]: NonOptionalDurablePlugin[K] extends (...args: any[]) => any ? K : never;
 }[keyof NonOptionalDurablePlugin];
-
-type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (k: infer I) => void ? I : never;
 
 export type ExtractPluggedRouters<K extends 'router' | 'ws_in' | 'ws_out' | 'tasks', P extends DurablePlugin[]> = UnionToIntersection<
 	Exclude<P[number][K], undefined>
@@ -128,11 +123,13 @@ export const createDurableObject = <PLUGINS extends DurablePlugin[]>(...plugins:
 			ws_out: InferAllRouters<Self, PLUGINS, 'ws_out'>;
 			ws_in: InferAllRouters<Self, PLUGINS, 'ws_in'>;
 			tasks: InferAllRouters<Self, PLUGINS, 'tasks'>;
+			exposed: EXPOSITION;
 		};
 		private exposition: EXPOSITION = {} as EXPOSITION;
 		get = <K extends keyof EXPOSITION>(key: K): EXPOSITION[K] => {
 			return this.exposition[key];
 		};
+
 		constructor(ctx: DurableObjectState, env: Env) {
 			super(ctx, env);
 			const selfPlugin = {

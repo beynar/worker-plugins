@@ -1,5 +1,5 @@
 import { WS_ERROR_TYPE } from './constants';
-import { stringify } from './transform';
+import { stringify } from './json';
 import { tryParse } from './utils/tryParse';
 
 export type ErrorResponse = {

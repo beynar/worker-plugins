@@ -1,4 +1,4 @@
-import { parse, stringify } from '../transform';
+import { parse, stringify } from '../json';
 
 const getStmt = 'SELECT value FROM kv_store WHERE namespace = ? AND key = ?;';
 const setStmt = 'INSERT OR REPLACE INTO kv_store (namespace, key, value) VALUES (?, ?, ?);';

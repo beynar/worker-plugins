@@ -1,6 +1,8 @@
 import { StandardSchemaV1 } from './standard-schema';
 import { HandleFunction, Handler } from './handler';
-import { Middleware } from './middleware';
+import { Middleware, ReturnOfMiddlewares } from './middleware';
+import { object } from 'zod';
+import { createRouter } from './router';
 
 export type ProcedureType = 'worker' | 'queue' | 'durable' | 'in' | 'out' | 'schedule';
 
@@ -32,3 +34,17 @@ export class Procedure<P extends ProcedureType, M extends Middleware<P>[] | unde
 		return new Handler(handleFunction, this.procedureType, this.middlewares, undefined) as Handler<H, P, M, undefined>;
 	};
 }
+
+const t2 = createRouter('worker').use(() => {
+	return {
+		ok: true,
+	};
+});
+type T = (typeof t2)['middlewares'];
+
+type R = ReturnOfMiddlewares<'worker', T>;
+t2.procedure()
+	.input(object({}))
+	.handle(({ ctx }) => {
+		const te = ctx.ok;
+	});

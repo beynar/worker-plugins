@@ -15,7 +15,7 @@ export type ReturnOfMiddlewares<
 				? PreviousData & HeadData & ReturnOfMiddlewares<P, Tail, PreviousData & HeadData>
 				: HeadData & PreviousData
 			: PreviousData
-		: never
+		: PreviousData
 	: never;
 
 export const useMiddlewares = async <P extends ProcedureType, M extends Middleware<P>[]>(
