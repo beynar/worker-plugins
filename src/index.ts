@@ -1,7 +1,10 @@
-import { createRouter } from './lib/rpc/router';
-import { any, string } from 'zod';
-import { createDurableObject, DurablePlugin } from './lib/durable/plugin';
-import { AnyDurableServer } from './lib/durable/object';
+import { AnyRouter, createRouter } from './lib/rpc/router';
+import { any, string } from 'zod/mini';
+import { AnyDurableInfer, createDurableObject, DurablePlugin } from './lib/durable/plugin';
+import { AnyDurableServer, DurableServerConstructor } from './lib/durable/object';
+import { createWorker } from './lib/worker/worker';
+import { createClient } from './lib/client/api';
+import { ConnectOptions } from './lib/client/websocket';
 
 /**
  * Welcome to Cloudflare Workers! This is your first Durable Objects application.
@@ -25,7 +28,7 @@ const Plugin1 = {
 	router: {
 		test1: t
 			.procedure()
-			.input(any())
+			.input(string())
 			.handle(async () => {
 				return 'coucou';
 			}),
@@ -57,7 +60,7 @@ const Plugin2 = {
 	ws_out: {
 		test: w
 			.procedure()
-			.input(any())
+			.input(string())
 			.handle(async () => {
 				return {
 					data: 'coucou',
@@ -73,6 +76,7 @@ const Plugin2 = {
 			.procedure()
 			.input(any())
 			.handle(async () => {
+				// const stub = await
 				return {
 					data: 'coucou',
 				};
@@ -83,10 +87,26 @@ const Plugin2 = {
 const plugins = [Plugin1, Plugin2];
 export class MyDurableObject extends createDurableObject(...plugins)<MyDurableObject> {
 	ws_out = {
-		test4: w
+		ws_out: w
 			.procedure()
 			.input(any())
-			.handle(async (input) => {
+			.handle(async ({ input }) => {
+				return `coucou ${input}`;
+			}),
+		nested_ws_out: {
+			nested_ws_out: w
+				.procedure()
+				.input(any())
+				.handle(async ({ input }) => {
+					return `coucou ${input}`;
+				}),
+		},
+	};
+	ws_in = {
+		ws_in: w
+			.procedure()
+			.input(any())
+			.handle(async ({ input }) => {
 				return `coucou ${input}`;
 			}),
 	};
@@ -95,9 +115,8 @@ export class MyDurableObject extends createDurableObject(...plugins)<MyDurableOb
 		super(ctx, env);
 	}
 
-	sayHello(s: string) {
-		const t = this.get('test');
-		return t;
+	sayHello(name: string) {
+		return `hello ${name}`;
 	}
 
 	router = {
@@ -110,23 +129,68 @@ export class MyDurableObject extends createDurableObject(...plugins)<MyDurableOb
 	};
 }
 
-const objects = {
-	test: MyDurableObject,
+const pluginRouter = {
+	test2: createRouter('worker')
+		.procedure()
+		.input(any())
+		.handle(async ({ event }) => {
+			const stub = event.env.MY_DURABLE_OBJECT;
+
+			// return stub.getByName('DEFAULT').sayHello('John');
+			return stub.getByName('DEFAULT').sayHello('John');
+		}),
 };
 
-type InferDurableServer<T> = T extends new (ctx: DurableObjectState, env: Env) => infer R
-	? R extends AnyDurableServer
-		? R['infer']
+const worker = createWorker()
+	.use({
+		router: pluginRouter,
+	})
+	.router((t) => {
+		return {
+			test: t.input(any()).handle(async ({ event }) => {
+				const stub = event.env.MY_DURABLE_OBJECT;
+				return stub.getByName('DEFAULT').sayHello('John');
+			}),
+			nested: {
+				nested: t.input(any()).handle(async ({ event }) => {
+					const stub = event.env.MY_DURABLE_OBJECT;
+					return stub.getByName('DEFAULT').sayHello('John');
+				}),
+			},
+		};
+	})
+	.object('MY_DURABLE_OBJECT', MyDurableObject, 'afr');
+
+export default worker.entrypoint;
+
+type T = (typeof worker)['~infer']['objects'];
+
+const client = createClient<(typeof worker)['~infer']>();
+
+const [res, error] = await client.MY_DURABLE_OBJECT('').test1('e');
+const ws = await client.MY_DURABLE_OBJECT('').connect({
+	handlers: {
+		test: ({ data, ctx }) => {
+			console.log(data);
+		},
+		nested_ws_out: {
+			nested_ws_out: ({ data, ctx }) => {},
+		},
+	},
+});
+
+export type RouterOf<DO extends DurableServerConstructor, T extends 'router' | 'ws_out' | 'ws_in' | 'tasks'> = DO extends new (
+	ctx: DurableObjectState,
+	env: Env
+) => infer D
+	? D extends { ['~infer']: infer Infer extends AnyDurableInfer }
+		? Infer[T]
 		: never
 	: never;
 
-type T = InferDurableServer<typeof objects.test>;
-
-export default {
-	async fetch(request, env, ctx): Promise<Response> {
-		const stub = env.MY_DURABLE_OBJECT.getByName('foo');
-		const greeting = await stub.sayHello('world');
-
-		return new Response(greeting);
-	},
-} satisfies ExportedHandler<Env>;
+type T2 = typeof MyDurableObject extends new (ctx: any, env: any) => infer D
+	? D extends { ['~infer']: infer Infer extends AnyDurableInfer }
+		? Infer['ws_out']
+		: never
+	: never;
+type T3 = RouterOf<typeof MyDurableObject, 'ws_out'>;

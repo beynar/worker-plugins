@@ -27,7 +27,9 @@ export class Router<T extends ProcedureType, M extends Middleware<T>[] | undefin
 	};
 }
 
-export type AnyRouter = Record<string, Handler<any, any, any, any>>;
+export type AnyRouter = {
+	[K in string]: Handler<any, any, any, any> | AnyRouter;
+};
 
 export type MergeRouter<A extends AnyRouter, B extends AnyRouter> = {
 	[K in keyof A | keyof B]: K extends keyof B ? B[K] : K extends keyof A ? A[K] : never;

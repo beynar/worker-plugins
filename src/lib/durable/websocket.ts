@@ -1,7 +1,7 @@
-import { array, object } from 'zod';
+import { optional, array, object, string } from 'zod/mini';
 import { AnyRouter } from '../rpc/router';
 import { DurableServer } from './object';
-import { string } from 'zod/mini';
+
 import { API, createApi } from '../rpc/api';
 import { DurableRequestEvent, Session, WebsocketInputRequestEvent, WebsocketOutputRequestEvent } from '../rpc/requestEvent';
 import { error, handleError, websocketError } from '../error';
@@ -19,10 +19,12 @@ export type Tags = Register extends {
 	? _Tags
 	: string;
 
-const sendOptions = object({
-	to: array(string()).optional(),
-	omit: array(string()).optional(),
-}).optional();
+const sendOptions = optional(
+	object({
+		to: optional(array(string())),
+		omit: optional(array(string())),
+	})
+);
 
 export const serializeSession = (ws: WebSocket, value: Session) => {
 	ws.serializeAttachment(stringify(value));

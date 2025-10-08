@@ -5,14 +5,16 @@ import type { Request as CfRequest } from '@cloudflare/workers-types';
 import { ProcedureType } from './procedure';
 import { Register } from '..';
 import { MaybePromise } from '../utils/types';
-import { AnyDurableServer, DurableServer } from '../durable/object';
+import { AnyDurableServer } from '../durable/object';
+import { WorkerConfig } from '../worker/worker';
 
-export type DurableRequest = CfRequest & { cf: { meta: DurableMeta; isWebSocketConnect: boolean } };
+export type DurableRequest = CfRequest & { cf: { meta: DurableMeta } };
 
-export type GetObjectJurisdictionOrLocationHint = (event: WorkerRequestEvent) => MaybePromise<{
-	jurisdiction?: DurableObjectJurisdiction;
-	locationHint?: DurableObjectLocationHint;
-} | void>;
+export type GetObjectJurisdictionOrLocationHint =
+	| ((opts: { event: WorkerRequestEvent }) => MaybePromise<JurisdictionOrLocationHint>)
+	| JurisdictionOrLocationHint;
+
+export type JurisdictionOrLocationHint = DurableObjectJurisdiction | DurableObjectLocationHint;
 
 export type SessionData = Register extends {
 	SessionData: infer _SessionData;
@@ -43,10 +45,10 @@ export type Session = {
 };
 
 export type Meta = {
-	name: string | null; // the durable object name
+	name: keyof Env | null; // the durable object name
 	id: string | null; // the durable object id
-	jurisdiction: DurableObjectJurisdiction | null; // the durable object jurisdiction if specified
-	locationHint: DurableObjectLocationHint | null; // the durable object location hint if specified
+	location: JurisdictionOrLocationHint | null; // the durable object jurisdiction if specified
+	isWebSocketConnect: boolean;
 };
 export type DurableMeta = Meta & Required<Pick<Meta, 'name' | 'id'>>;
 
@@ -108,115 +110,61 @@ export type DynamicRequestEvent<P extends ProcedureType> = P extends 'queue'
 	? ScheduleRequestEvent
 	: WorkerRequestEvent;
 
-const getMetaFromRequest = async ({
-	event,
-	getObjectJurisdictionOrLocationHint,
-}: {
-	event: WorkerRequestEvent;
-	getObjectJurisdictionOrLocationHint?: GetObjectJurisdictionOrLocationHint;
-}): Promise<void> => {
-	[event.meta.name, event.meta.id] = decodeURI(event.request.url)
-		.match(/\/\(([^:]+):([^)]+)\)/)
-		?.slice(1) || [null, null];
-
-	if (event.meta.id === 'random') {
-		event.meta.id = crypto.randomUUID();
-	}
-
-	if (event.meta.name && event.meta.id && getObjectJurisdictionOrLocationHint) {
-		const localization = await getObjectJurisdictionOrLocationHint(event);
-		Object.assign(event.meta, {
-			jurisdiction: localization?.jurisdiction || null,
-			locationHint: localization?.locationHint || null,
-		});
-	}
+const nullMeta: Meta = {
+	name: null,
+	id: null,
+	location: null,
+	isWebSocketConnect: false,
 };
 
-export const getJurisdictionalNamespace = (
-	namespace: DurableObjectNamespace<DurableServer>,
-	jurisdiction: DurableObjectJurisdiction | null
-): DurableObjectNamespace<DurableServer> => {
-	if (!jurisdiction) {
-		return namespace;
-	}
-	try {
-		return namespace.jurisdiction(jurisdiction);
-	} catch (error) {
-		// We must be in a dev env and the jurisdictional setting is not available
-		return namespace;
-	}
+const getMeta = async (config: WorkerConfig, event: WorkerRequestEvent): Promise<Meta> => {
+	const isObjectRequest = event.request.url.match(/\(([^:]+):([^)]+)\)/);
+	if (!isObjectRequest || !config.objects) return nullMeta;
+	const [name, id] = isObjectRequest.slice(1) as [keyof Env, string];
+	if (!(name in config.objects)) return nullMeta;
+	const [_, getJurisdictionOrLocationHint] = config.objects[name];
+
+	const jurisdictionOrLocationHint =
+		typeof getJurisdictionOrLocationHint === 'function'
+			? await getJurisdictionOrLocationHint({ event })
+			: getJurisdictionOrLocationHint || null;
+	return {
+		name,
+		id,
+		location: jurisdictionOrLocationHint,
+		isWebSocketConnect: false,
+	};
 };
 
-export const buildEvent = async (
+export const createWorkerEvent = async (
 	request: CfRequest,
 	env: Env,
 	ctx: ExecutionContext,
-	opts: ServerOptions,
-	server: string | null = null,
-	isWebSocketConnect: boolean = false
+	config: WorkerConfig
 ): Promise<WorkerRequestEvent> => {
 	const url = new URL(decodeURI(request.url));
-	const clonedHeaders = new Headers(request.headers);
-
-	if (isWebSocketConnect) {
-		// Websockets lacks the headers object, so we need to parse the headers from the search params and append them to the headers object
-		const searchParamsHeaders = JSON.parse(url.searchParams.get('headers') || '{}');
-		Object.entries(searchParamsHeaders).forEach(([key, value]) => {
-			clonedHeaders.append(key, value as string);
-		});
-		url.searchParams.delete('headers');
-	}
-
-	// no need to clone the request for normal requests
-	const clonedRequest = isWebSocketConnect
-		? (new Request(request as any, {
-				headers: clonedHeaders,
-		  }) as any)
-		: request;
-
-	const event = {
+	const event: WorkerRequestEvent = {
 		ctx,
 		env,
-		path: [],
-		request: clonedRequest,
-		meta: { name: null, id: null, jurisdiction: null, locationHint: null },
+		path: url.pathname.split('/').filter(Boolean),
+		request,
+		meta: nullMeta,
 		url,
 		cookies: new Cookies(request as any),
-	} satisfies WorkerRequestEvent;
-
-	getPath(event);
-	await getMetaFromRequest({ event, getObjectJurisdictionOrLocationHint: opts.getObjectJurisdictionOrLocationHint });
-
+	};
+	event.meta.isWebSocketConnect = request.headers.get('upgrade') === 'websocket';
+	event.meta = await getMeta(config, event);
 	return event;
 };
 
 export const createDurableRequestEvent = (request: DurableRequest, server: AnyDurableServer): DurableRequestEvent => {
 	const url = new URL(request.url);
-	const path = url.pathname.split('/').filter(Boolean);
-
 	return {
-		cookies: new Cookies(request),
 		server,
-		meta: { name: null, id: null, jurisdiction: null, locationHint: null },
+		meta: nullMeta,
 		request,
 		url: new URL(request.url),
-		path,
+		path: url.pathname.split('/').filter(Boolean),
+		cookies: new Cookies(request),
 	};
-};
-
-export const getPath = (event: WorkerRequestEvent | DurableRequestEvent) => {
-	let isObject = false;
-	event.path = event.url.pathname.split('/').filter((part) => {
-		if (!part) {
-			return false;
-		}
-		if (part.match(/\(([^:]+):([^)]+)\)/)) {
-			isObject = true;
-			return false;
-		}
-		if (part.match(/\[([^\]]+)\]/)) {
-			return false;
-		}
-		return true;
-	});
 };

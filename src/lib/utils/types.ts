@@ -16,3 +16,22 @@ export type ExtractFunctions<T> = {
 export type IfDefined<T, F = never> = T extends undefined ? F : T;
 
 export type Defined<T> = Exclude<T, undefined>;
+
+export type IntersectArrayProp<T extends any[], key extends keyof T[number], Acc extends Record<string, any> = {}> = T extends [
+	infer Head,
+	...infer Tail
+]
+	? Head[key] extends Record<string, any>
+		? IntersectArrayProp<Tail, key, Acc & Head[key]>
+		: IntersectArrayProp<Tail, key, Acc>
+	: Acc;
+
+export type SafeReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
+
+export type Get<T, K extends string> = K extends `${infer P}.${infer Rest}`
+	? P extends keyof T
+		? Get<T[P], Rest>
+		: never
+	: K extends keyof T
+	? T[K]
+	: 'never';

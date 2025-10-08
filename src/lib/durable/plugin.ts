@@ -86,11 +86,12 @@ const mergePlugins = <Plugins extends DurablePlugin[]>(...plugins: Plugins) => {
 	};
 };
 
-type RestrictedDurableObject<T> = Omit<T, 'invokePlugins' | 'fetch' | 'webSocketError' | 'webSocketClose' | 'webSocketMessage'>;
+export type RestrictedDurableObject<T> = Omit<T, 'invokePlugins' | 'fetch' | 'webSocketError' | 'webSocketClose' | 'webSocketMessage'>;
 
 export const createDurableObject = <PLUGINS extends DurablePlugin[]>(...plugins: PLUGINS) => {
 	const merged = mergePlugins(...plugins);
 	type EXPOSITION = UnionToIntersection<Exclude<PLUGINS[number]['expose'], undefined>>;
+	let EXPOSITION = {} as EXPOSITION;
 
 	class DurableObjectWithPlugins<
 		Self extends RestrictedDurableObject<DurableServer<AnyRouter, AnyRouter, AnyRouter, AnyRouter, PLUGINS>>
@@ -118,16 +119,10 @@ export const createDurableObject = <PLUGINS extends DurablePlugin[]>(...plugins:
 			isHandled: boolean;
 		}) => MaybePromise<void>;
 		declare onWebSocketOpen?: (opts: { event: DurableRequestEvent; session: Session }) => MaybePromise<void>;
-		declare infer: {
-			router: InferAllRouters<Self, PLUGINS, 'router'>;
-			ws_out: InferAllRouters<Self, PLUGINS, 'ws_out'>;
-			ws_in: InferAllRouters<Self, PLUGINS, 'ws_in'>;
-			tasks: InferAllRouters<Self, PLUGINS, 'tasks'>;
-			exposed: EXPOSITION;
-		};
-		private exposition: EXPOSITION = {} as EXPOSITION;
+		// @ts-ignore TS4094
+
 		get = <K extends keyof EXPOSITION>(key: K): EXPOSITION[K] => {
-			return this.exposition[key];
+			return EXPOSITION[key];
 		};
 
 		constructor(ctx: DurableObjectState, env: Env) {
@@ -151,7 +146,7 @@ export const createDurableObject = <PLUGINS extends DurablePlugin[]>(...plugins:
 				if (plugin.expose) {
 					const keys = Object.keys(plugin.expose || {}) as (keyof typeof plugin.expose)[];
 					keys.forEach((key) => {
-						Object.defineProperty(this.exposition, key, {
+						Object.defineProperty(EXPOSITION, key, {
 							get() {
 								return plugin.expose?.[key];
 							},
@@ -160,6 +155,14 @@ export const createDurableObject = <PLUGINS extends DurablePlugin[]>(...plugins:
 				}
 			});
 		}
+
+		declare ['~infer']: {
+			router: InferAllRouters<Self, PLUGINS, 'router'>;
+			ws_out: InferAllRouters<Self, PLUGINS, 'ws_out'>;
+			ws_in: InferAllRouters<Self, PLUGINS, 'ws_in'>;
+			tasks: InferAllRouters<Self, PLUGINS, 'tasks'>;
+			exposed: EXPOSITION;
+		};
 	}
 
 	return DurableObjectWithPlugins as new <
@@ -168,4 +171,14 @@ export const createDurableObject = <PLUGINS extends DurablePlugin[]>(...plugins:
 		ctx: DurableObjectState,
 		env: Env
 	) => RestrictedDurableObject<DurableObjectWithPlugins<Self>>;
+};
+
+export type AnyRestrictedDurableObject = RestrictedDurableObject<AnyDurableServer>;
+
+export type AnyDurableInfer = {
+	router: AnyRouter;
+	ws_out: AnyRouter;
+	ws_in: AnyRouter;
+	tasks: AnyRouter;
+	exposed: Record<string, any>;
 };

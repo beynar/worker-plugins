@@ -3,7 +3,7 @@ import { parse, stringify } from '../json';
 import { getHandler } from '../rpc/handler';
 import { AnyRouter } from '../rpc/router';
 import { API, createApi } from '../rpc/api';
-import { date, never, number, object, optional, string, union } from 'zod/mini';
+import { date, number, object, optional, string, union } from 'zod/mini';
 import { DurableServer } from './object';
 import { ScheduleRequestEvent } from '../rpc/requestEvent';
 

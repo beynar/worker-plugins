@@ -2,9 +2,13 @@ import { StandardSchemaV1 } from './standard-schema';
 import { Middleware, ReturnOfMiddlewares, useMiddlewares } from './middleware';
 import { MaybePromise, OmitNever } from '../utils/types';
 import { ProcedureType } from './procedure';
-import { DynamicRequestEvent } from './requestEvent';
-import { AnyRouter, Router } from './router';
+import { DurableRequestEvent, DynamicRequestEvent, WorkerRequestEvent } from './requestEvent';
+import { AnyRouter } from './router';
 import { error } from '../error';
+import { deform, form, parse, stringify } from '../json';
+import { validate } from '../utils/validate';
+import { WorkerConfig } from '../worker/worker';
+import { withCookies } from '../cookies';
 
 export type HandlePayload<
 	P extends ProcedureType,
@@ -72,3 +76,36 @@ export const getHandler = <T extends boolean | undefined = true>(
 };
 
 export type AnyHandler = Handler<any, any, any, any>;
+
+export const handleRequest = async ({
+	event,
+	config,
+}: {
+	event: WorkerRequestEvent | DurableRequestEvent;
+	config: WorkerConfig;
+}): Promise<Response> => {
+	const mode = event.request.headers.get('x-flarepc-client') as 'json' | 'form' | null;
+
+	const isClientRequest = !!mode;
+	const data =
+		mode === 'form'
+			? deform((await event.request.formData()) as FormData)
+			: isClientRequest
+			? parse(await event.request.text())
+			: await event.request.json();
+
+	console.log('mode', mode, event.path, data);
+	const handler = getHandler(config.router, event.path, true);
+	const validatedData = await validate(handler.schema, data);
+	const responseData = await handler.call(event, validatedData);
+	const stringifiedBody = mode === 'form' ? form(responseData) : isClientRequest ? stringify(responseData) : JSON.stringify(responseData);
+
+	return withCookies(
+		new Response(stringifiedBody, {
+			headers: {
+				'Content-Type': 'application/json',
+			},
+		}),
+		event
+	);
+};

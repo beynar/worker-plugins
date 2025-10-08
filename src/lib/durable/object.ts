@@ -2,11 +2,10 @@ import { DurableObject } from 'cloudflare:workers';
 import { WebsocketManager, WS_API } from './websocket';
 import { DurableKV } from './kv';
 import { Scheduler, TASK_API } from './scheduler';
-import { AnyRouter, createRouter, mergeRouters } from '../rpc/router';
-import { createDurableRequestEvent, DurableMeta, DurableRequest, DurableRequestEvent } from '../rpc/requestEvent';
-import { object, string } from 'zod';
-import { DurablePlugin, ExtractPluggedRouters, NonOptionalDurablePlugin } from './plugin';
-import { ExtractFunctions, MaybePromise } from '../utils/types';
+import { AnyRouter } from '../rpc/router';
+import { createDurableRequestEvent, DurableRequest, DurableRequestEvent } from '../rpc/requestEvent';
+import { AnyRestrictedDurableObject, DurablePlugin, ExtractPluggedRouters, NonOptionalDurablePlugin } from './plugin';
+import { ExtractFunctions } from '../utils/types';
 
 export class DurableServer<
 	ROUTER extends AnyRouter | undefined = undefined,
@@ -21,9 +20,9 @@ export class DurableServer<
 	declare ws_out: WS_OUT;
 	declare send: WS_API<WS_OUT>;
 	declare tasks: TASKS;
-	private scheduler: Scheduler<TASKS>;
 	declare schedule: TASK_API<TASKS>;
-	private websocketManager: WebsocketManager<WS_IN, WS_OUT>;
+	scheduler: Scheduler<TASKS>;
+	websocketManager: WebsocketManager<WS_IN, WS_OUT>;
 	kv: DurableKV;
 
 	declare infer: {
@@ -66,7 +65,7 @@ export class DurableServer<
 	async fetch(request: DurableRequest): Promise<Response> {
 		const event = createDurableRequestEvent(request, this);
 		await this.invokePlugins('onFetch', { event });
-		if (request.cf.isWebSocketConnect) {
+		if (request.cf.meta.isWebSocketConnect) {
 			return this.websocketManager.handleWebsocketConnection(event);
 		}
 		return new Response(null);
@@ -89,3 +88,4 @@ export class DurableServer<
 }
 
 export type AnyDurableServer = DurableServer<any, any, any, any, any>;
+export type DurableServerConstructor = new (ctx: DurableObjectState, env: Env) => AnyRestrictedDurableObject;

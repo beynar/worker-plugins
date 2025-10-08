@@ -1,9 +1,8 @@
-import z from 'zod';
 import { ErrorResponse } from '../error';
 import { MaybePromise } from '../utils/types';
 import { validate } from '../utils/validate';
 import { AnyHandler, getHandler, Handler } from './handler';
-import { AnyRouter, createRouter } from './router';
+import { AnyRouter } from './router';
 import { StandardSchemaV1 } from './standard-schema';
 
 export type ApiResult<T> = Promise<[Awaited<T>, null] | [null, ErrorResponse]>;

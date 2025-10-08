@@ -1,19 +1,28 @@
+import { Request } from '@cloudflare/workers-types';
 import { WorkerPlugin } from './plugin';
-import { WorkerRequestEvent, AnyRouter, createRouter, Router, QueueRequestEvent } from '../rpc';
-import { IfDefined, MaybePromise, UnionToIntersection } from '../utils/types';
-import { any, object, string } from 'zod';
-import { createDurableObject } from '../durable';
+import {
+	WorkerRequestEvent,
+	AnyRouter,
+	createRouter,
+	QueueRequestEvent,
+	GetObjectJurisdictionOrLocationHint,
+	createWorkerEvent,
+} from '../rpc';
+import { IntersectArrayProp, MaybePromise, SafeReturnType } from '../utils/types';
 import { FLARERROR } from '../error';
 import { Middleware } from '../rpc';
-
+import { DurableServerConstructor } from '../durable/object';
+import { fetch as workerFetch } from './fetch';
 type BeforeFunction = (opts: { event: WorkerRequestEvent }) => MaybePromise<Response | void>;
-type AfterFunction = (response: Response, opts: { event: WorkerRequestEvent }) => MaybePromise<Response | void>;
+type AfterFunction = (opts: {
+	response?: Response;
+	event: WorkerRequestEvent;
+	error?: FLARERROR | unknown;
+}) => MaybePromise<Response | void>;
 type CronFunction = () => MaybePromise<void>;
-type ErrorFunction = (errorPayload: { error: FLARERROR; event: WorkerRequestEvent }) => MaybePromise<Response | void>;
+type ErrorFunction = (errorPayload: { error: FLARERROR | unknown; event: WorkerRequestEvent }) => MaybePromise<Response | void>;
 
-type DurableObjectConstructor = new (ctx: DurableObjectState, env: Env) => any;
-
-interface WorkerConfig {
+export interface WorkerConfig {
 	name?: string;
 	router?: AnyRouter;
 	queues?: AnyRouter;
@@ -22,29 +31,8 @@ interface WorkerConfig {
 	onError?: ErrorFunction[];
 	crons?: Record<string, CronFunction>;
 	plugins?: WorkerPlugin[];
-	objects?: Record<string, DurableObjectConstructor>;
+	objects?: Record<string, [DurableServerConstructor, GetObjectJurisdictionOrLocationHint]>;
 }
-
-type EnsureObjectType<T> = T extends Record<string, DurableObjectConstructor> ? T : never;
-
-type Merge<T extends WorkerPlugin[], key extends keyof WorkerPlugin> = T extends [
-	infer Head extends WorkerPlugin,
-	...infer Tail extends WorkerPlugin[]
-]
-	? Head[key] extends undefined
-		? Merge<Tail, key>
-		: Head[key] | Merge<Tail, key>
-	: T extends [infer Head extends WorkerPlugin]
-	? Head[key]
-	: never;
-
-// type MergeMiddlewares<T extends WorkerPlugin[]> = T extends [infer Head extends WorkerPlugin, ...infer Tail extends WorkerPlugin[]]
-// 	? Head['middleware'] extends undefined
-// 		? MergeMiddlewares<Tail>
-// 		: SafeReturnType<Head['middleware']> & MergeMiddlewares<Tail>
-// 	: T extends [infer Head extends WorkerPlugin]
-// 	? SafeReturnType<Head['middleware']>
-// 	: never;
 
 type MergeMiddlewares<T extends WorkerPlugin[], Acc extends Record<string, any> = {}> = T extends [
 	infer Head extends WorkerPlugin,
@@ -55,72 +43,9 @@ type MergeMiddlewares<T extends WorkerPlugin[], Acc extends Record<string, any> 
 		: MergeMiddlewares<Tail, Acc>
 	: Acc;
 
-type MergeIntoObject<T extends WorkerPlugin[], key extends keyof WorkerPlugin, Acc extends Record<string, any> = {}> = T extends [
-	infer Head extends WorkerPlugin,
-	...infer Tail extends WorkerPlugin[]
-]
-	? Head[key] extends Record<string, any>
-		? MergeIntoObject<Tail, key, Acc & Head[key]>
-		: MergeIntoObject<Tail, key, Acc>
-	: Acc;
-
-type SafeReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
-
 export const createWorker = <N extends string>(name?: N) => {
 	return new Worker({ name });
 };
-
-class MyDurableObject extends createDurableObject()<MyDurableObject> {}
-
-const t2 = createRouter('worker').use(() => {
-	return {
-		ok: true,
-	};
-});
-
-t2.procedure()
-	.input(object({}))
-	.handle(({}) => {});
-const worker = createWorker()
-	.use({
-		// middleware: () => {
-		// 	return {
-		// 		ok: true,
-		// 	};
-		// },
-		expose: {
-			test: () => {
-				return 'hello';
-			},
-		},
-	})
-	.use({
-		middleware: () => {
-			return {
-				caca: 'true',
-			};
-		},
-
-		expose: {
-			test2: () => {
-				return 'hello';
-			},
-		},
-	})
-	.object('keyOfENV', MyDurableObject)
-	.router((t) => ({
-		test: t
-			.input(
-				object({
-					streing: string(),
-				})
-			)
-			.handle(({ input, event, ctx }) => {
-				const t = ctx.test();
-				return 'hello';
-			}),
-	}));
-
 export class Worker<Config extends WorkerConfig = {}> {
 	private config: Config;
 
@@ -150,6 +75,19 @@ export class Worker<Config extends WorkerConfig = {}> {
 		});
 	};
 
+	private initPlugins = async (event: WorkerRequestEvent | QueueRequestEvent) => {
+		return Promise.all(
+			(this.config.plugins || []).reduce((acc, p) => {
+				if (p.init) {
+					const maybePromise = p.init({ event });
+					if (maybePromise instanceof Promise) {
+						acc.push(maybePromise);
+					}
+				}
+				return acc;
+			}, [] as Promise<any>[])
+		);
+	};
 	private get exposed() {
 		return (this.config.plugins || []).reduce((acc, plugin) => {
 			return {
@@ -159,23 +97,20 @@ export class Worker<Config extends WorkerConfig = {}> {
 		}, {} as this['~infer']['exposed']);
 	}
 
-	get route() {
-		return createRouter('worker')
-			.use(this.pluginsMiddleware)
-			.use(() => {
-				return this.exposed;
-			})
-			.procedure();
-	}
-	get queue() {
-		// This should returns createRouter("queue").procedure
-		return createRouter('queue')
-			.use(this.pluginsMiddleware)
-			.use(() => {
-				return this.exposed;
-			})
-			.procedure();
-	}
+	route = createRouter('worker')
+		.use(this.pluginsMiddleware)
+		.use(() => {
+			return this.exposed;
+		})
+		.procedure();
+
+	queue = createRouter('queue')
+		.use(this.pluginsMiddleware)
+		.use(() => {
+			return this.exposed;
+		})
+		.procedure();
+
 	/**
 	 * Add plugins to the worker
 	 */
@@ -209,7 +144,7 @@ export class Worker<Config extends WorkerConfig = {}> {
 	/**
 	 * Define or extend queue handlers
 	 */
-	queues = <Q>(fn: (t: typeof this.queue) => Q) => {
+	queues = <const Q>(fn: (t: typeof this.queue) => Q) => {
 		const newQueues = fn(this.queue);
 		return new Worker({
 			...this.config,
@@ -266,51 +201,52 @@ export class Worker<Config extends WorkerConfig = {}> {
 	/**
 	 * Bind a Durable Object to the worker
 	 */
-	object = <K extends string, DO extends DurableObjectConstructor>(key: K, durableObject: DO) => {
+	object = <K extends string, DO extends DurableServerConstructor>(
+		key: K,
+		durableObject: DO,
+		getJurisdictionOrLocationHint?: GetObjectJurisdictionOrLocationHint
+	) => {
 		return new Worker({
 			...this.config,
 			objects: {
 				...(this.config.objects || {}),
-				[key]: durableObject,
+				[key]: [durableObject, getJurisdictionOrLocationHint],
 			},
 		} as Config & {
-			objects: (Config['objects'] extends Record<string, DurableObjectConstructor> ? Config['objects'] : {}) & Record<K, DO>;
+			objects: (Config['objects'] extends Record<string, [DurableServerConstructor, GetObjectJurisdictionOrLocationHint]>
+				? Config['objects']
+				: {}) &
+				Record<K, [DO, GetObjectJurisdictionOrLocationHint]>;
 		});
 	};
 
-	fetch = (request: Request) => {
-		return new Response('hello');
+	private fetch = async (request: Request, env: Env, ctx: ExecutionContext) => {
+		const event = await createWorkerEvent(request, env, ctx, this.config);
+		await this.initPlugins(event);
+		return workerFetch(this.config, event);
+	};
+
+	entrypoint = {
+		fetch: this.fetch,
 	};
 
 	declare '~infer': {
-		router: Config['queues'] & (Config['plugins'] extends WorkerPlugin[] ? MergeIntoObject<Config['plugins'], 'router'> : {});
-		queues: Config['queues'] & (Config['plugins'] extends WorkerPlugin[] ? MergeIntoObject<Config['plugins'], 'queues'> : {});
-		exposed: Config['plugins'] extends WorkerPlugin[] ? MergeIntoObject<Config['plugins'], 'expose'> : {};
-		objects: Config['objects'] extends Record<string, DurableObjectConstructor> ? Config['objects'] : {};
+		router: Config['router'] & (Config['plugins'] extends WorkerPlugin[] ? IntersectArrayProp<Config['plugins'], 'router'> : {});
+		queues: Config['queues'] & (Config['plugins'] extends WorkerPlugin[] ? IntersectArrayProp<Config['plugins'], 'queues'> : {});
+		exposed: Config['plugins'] extends WorkerPlugin[] ? IntersectArrayProp<Config['plugins'], 'expose'> : {};
+		objects: Config['objects'] extends Record<string, [DurableServerConstructor, GetObjectJurisdictionOrLocationHint]>
+			? Config['objects']
+			: {};
 		middleware: Config['plugins'] extends WorkerPlugin[] ? MergeMiddlewares<Config['plugins']> : never;
 		plugins: Config['plugins'];
 	};
 }
 
-type T = (typeof worker)['~infer']['exposed'];
-type O = (typeof worker)['~infer']['middleware'];
-type P = (typeof worker)['~infer']['plugins'];
-
-const p1 = {
-	expose: {
-		banana: true,
-	},
-};
-
-const router2 = {
-	test2: worker.route
-		.input(
-			object({
-				streing: string(),
-			})
-		)
-		.handle(({ input, event, ctx }) => {
-			const t = ctx.test();
-			return 'hello';
-		}),
+export type AnyWorkerInfer = {
+	router: AnyRouter;
+	queues: AnyRouter;
+	exposed: Record<string, any>;
+	objects: Record<string, [DurableServerConstructor, GetObjectJurisdictionOrLocationHint]>;
+	middleware: Record<string, any>;
+	plugins: WorkerPlugin[];
 };
