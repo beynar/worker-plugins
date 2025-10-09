@@ -162,35 +162,3 @@ const worker = createWorker()
 	.object('MY_DURABLE_OBJECT', MyDurableObject, 'afr');
 
 export default worker.entrypoint;
-
-type T = (typeof worker)['~infer']['objects'];
-
-const client = createClient<(typeof worker)['~infer']>();
-
-const [res, error] = await client.MY_DURABLE_OBJECT('').test1('e');
-const ws = await client.MY_DURABLE_OBJECT('').connect({
-	handlers: {
-		test: ({ data, ctx }) => {
-			console.log(data);
-		},
-		nested_ws_out: {
-			nested_ws_out: ({ data, ctx }) => {},
-		},
-	},
-});
-
-export type RouterOf<DO extends DurableServerConstructor, T extends 'router' | 'ws_out' | 'ws_in' | 'tasks'> = DO extends new (
-	ctx: DurableObjectState,
-	env: Env
-) => infer D
-	? D extends { ['~infer']: infer Infer extends AnyDurableInfer }
-		? Infer[T]
-		: never
-	: never;
-
-type T2 = typeof MyDurableObject extends new (ctx: any, env: any) => infer D
-	? D extends { ['~infer']: infer Infer extends AnyDurableInfer }
-		? Infer['ws_out']
-		: never
-	: never;
-type T3 = RouterOf<typeof MyDurableObject, 'ws_out'>;

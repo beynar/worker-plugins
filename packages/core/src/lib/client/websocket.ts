@@ -1,21 +1,26 @@
 import { stringify, parse } from '../json';
 import { recursiveProxy } from './proxies';
-import type { MessageHandlers, RouterPaths } from './types';
 import { ObservableV2 } from 'lib0/observable';
-
 import { WS_RESPONSE_TYPE } from '../constants';
-import { DurableServerConstructor } from '../durable/object';
 import { API } from '../rpc/api';
-import { AnyDurableInfer } from '../durable/plugin';
-import { getHandler } from '../rpc/handler';
 import { AnyRouter, Participant } from '../rpc';
+import { Handler } from '../rpc/handler';
+import { StandardSchemaV1 } from '../rpc/standard-schema';
 
 export type WebSocketState = 'RECONNECTING' | 'CONNECTED' | 'CLOSED';
 
-export type ConnectOptions<Router extends AnyRouter> = {
+export type MessageHandlers<Router extends AnyRouter> = {
+	[K in keyof Router]?: Router[K] extends AnyRouter
+		? MessageHandlers<Router[K]>
+		: Router[K] extends Handler<infer H, any, any, infer S>
+		? (result: { data: S extends StandardSchemaV1 ? StandardSchemaV1.InferOutput<S> : never; ctx: Awaited<ReturnType<H>> }) => void
+		: never;
+};
+
+export type ConnectOptions<OUT extends AnyRouter> = {
 	searchParams?: Record<string, string>;
 	headers?: Record<string, string>;
-	handlers?: MessageHandlers<Router>;
+	handlers?: MessageHandlers<OUT>;
 	dedupeConnection?: boolean;
 	autoReconnectInterval?: number;
 	maxReconnectAttempts?: number;
@@ -35,13 +40,7 @@ type Events = {
 	stateChange: (state: WebSocketState) => void;
 };
 
-export type SendAPI<DO extends DurableServerConstructor> = DO extends new (ctx: DurableObjectState, env: Env) => infer D
-	? D extends { ['~infer']: AnyDurableInfer }
-		? API<D['~infer']['ws_in']>
-		: never
-	: never;
-
-export class WebSocketClient<DO extends DurableServerConstructor> extends ObservableV2<Events> {
+export class WebSocketClient<IN extends AnyRouter, OUT extends AnyRouter> extends ObservableV2<Events> {
 	protected lastHeartBeatTs?: Date;
 	private autoReconnectInterval = 1000; // ms
 	private maxReconnectAttempts = 7;
@@ -54,7 +53,7 @@ export class WebSocketClient<DO extends DurableServerConstructor> extends Observ
 	private wsPromises = new Map<string, (value: any) => any>();
 	private shouldReconnect = true;
 
-	opts: ConnectOptions<DO>;
+	opts: ConnectOptions<OUT>;
 	url: string;
 	ws: WebSocket | null = null;
 	state: WebSocketState = 'CLOSED';
@@ -109,7 +108,7 @@ export class WebSocketClient<DO extends DurableServerConstructor> extends Observ
 			this.ws.send(message);
 		}
 		return this.wsPromise(id);
-	}) as SendAPI<DO>;
+	}) as API<IN>;
 
 	sendRaw = (data: any) => {
 		if (!this.ws || this.ws.readyState !== 1) {
@@ -224,7 +223,7 @@ export class WebSocketClient<DO extends DurableServerConstructor> extends Observ
 			if (e.data === 'pong') {
 				if (this.pongTimer) clearTimeout(this.pongTimer);
 			} else {
-				const { type, data, id, error } = parse(e.data as string) as MessagePayloa<O, RouterPaths<O>>;
+				const { type, data, id, error } = parse(e.data as string);
 				if (type === 'presence') {
 					this.presence = data as Participant[];
 
@@ -249,7 +248,7 @@ export class WebSocketClient<DO extends DurableServerConstructor> extends Observ
 			this.emit('arrayBufferMessage', [e]);
 		}
 	};
-	constructor(url: string, opts: ConnectOptions<O> = {}) {
+	constructor(url: string, opts: ConnectOptions<OUT> = {}) {
 		super();
 		this.url = url;
 		this.opts = opts;
@@ -263,18 +262,18 @@ export class WebSocketClient<DO extends DurableServerConstructor> extends Observ
 	}
 }
 
-export const retrievePreviousClient = <DO extends DurableServerConstructor>(url: string) => {
-	if (!(globalThis as any).__flarews) {
-		(globalThis as any).__flarews = new Map();
-	}
-	return (globalThis as any).__flarews.get(url) as WebSocketClient<DO> | undefined;
-};
-
-export const createWebSocketConnection = <DO extends DurableServerConstructor>(
+export const createWebSocketConnection = <IN extends AnyRouter, OUT extends AnyRouter>(
 	url: URL,
-	opts?: ConnectOptions<DO>,
+	opts?: ConnectOptions<OUT>,
 	headers?: HeadersInit
-): Promise<WebSocketClient<DO>> => {
+): Promise<WebSocketClient<IN, OUT>> => {
+	const retrievePreviousClient = (url: string) => {
+		if (!(globalThis as any).__flarews) {
+			(globalThis as any).__flarews = new Map();
+		}
+		return (globalThis as any).__flarews.get(url) as WebSocketClient<IN, OUT> | undefined;
+	};
+
 	return new Promise((resolve, reject) => {
 		if (headers || opts?.headers) {
 			url.searchParams.append('headers', JSON.stringify(Object.assign(headers || {}, opts?.headers || {})));
@@ -285,13 +284,13 @@ export const createWebSocketConnection = <DO extends DurableServerConstructor>(
 			}
 		}
 		const endpoint = url.toString();
-		const previousClient = opts?.dedupeConnection !== false && retrievePreviousClient<I, O>(endpoint);
-		const client = previousClient || new WebSocketClient<I, O>(endpoint, opts);
+		const previousClient = opts?.dedupeConnection !== false && retrievePreviousClient(endpoint);
+		const client = previousClient || new WebSocketClient<IN, OUT>(endpoint, opts);
 		if (!previousClient) {
 			return client.open().then(() => {
 				resolve(client);
 			});
 		}
-		return resolve(client);
+		return resolve(previousClient);
 	});
 };

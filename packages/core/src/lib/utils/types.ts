@@ -1,3 +1,6 @@
+import { DurableServerConstructor } from '../durable/object';
+import { AnyDurableInfer } from '../durable/plugin';
+
 export type OmitNever<T> = Pick<
 	T,
 	{
@@ -35,3 +38,12 @@ export type Get<T, K extends string> = K extends `${infer P}.${infer Rest}`
 	: K extends keyof T
 	? T[K]
 	: 'never';
+
+export type RouterOf<DO extends DurableServerConstructor, T extends 'router' | 'ws_out' | 'ws_in' | 'tasks'> = DO extends new (
+	ctx: DurableObjectState,
+	env: Env
+) => infer D
+	? D extends { ['~infer']: infer Infer extends AnyDurableInfer }
+		? Infer[T]
+		: never
+	: never;

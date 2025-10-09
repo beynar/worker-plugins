@@ -1,21 +1,18 @@
 import { type MaybePromise } from '../utils/types';
-import { ConnectOptions, createWebSocketConnection, SendAPI, WebSocketClient } from './websocket';
+import { ConnectOptions, createWebSocketConnection, WebSocketClient } from './websocket';
 import { tryParse } from '../utils';
 import { deform, form, parse } from '../json';
-import { createApiProxy, ProxyOutput } from './proxies';
-import { Worker } from '../worker';
+import { createApiProxy } from './proxies';
 import { API } from '../rpc/api';
 import { AnyWorkerInfer } from '../worker/worker';
-import { DurableServerConstructor } from '../durable/object';
-import { AnyRouter } from '../rpc';
-import { AnyDurableInfer, RestrictedDurableObject } from '../durable/plugin';
-import { RouterOf } from './types';
+import { RouterOf } from '../utils/types';
+import { handleStream } from './stream';
 
-type DurableObjectAPI<DO extends DurableServerConstructor> = API<RouterOf<DO, 'router'>>;
-
-type ClientAPI<W extends AnyWorkerInfer> = API<W['router']> & {
-	[O in keyof W['objects']]: (id?: 'random' | 'default' | (string & {})) => DurableObjectAPI<W['objects'][O][0]> & {
-		connect: (opts: ConnectOptions<RouterOf<W['objects'][O][0], 'ws_out'>>) => WebSocketClient<W['objects'][O][0]>;
+export type ClientAPI<W extends AnyWorkerInfer> = API<W['router']> & {
+	[O in keyof W['objects']]: (id?: 'random' | 'default' | (string & {})) => API<RouterOf<W['objects'][O][0], 'router'>> & {
+		connect: (
+			opts: ConnectOptions<RouterOf<W['objects'][O][0], 'ws_out'>>
+		) => WebSocketClient<RouterOf<W['objects'][O][0], 'ws_in'>, RouterOf<W['objects'][O][0], 'ws_out'>>;
 	};
 };
 
@@ -123,34 +120,7 @@ export const createClient = <W extends AnyWorkerInfer>({
 			} else {
 				const contentType = res.headers.get('content-type');
 				if (contentType === 'text/event-stream') {
-					const reader = res.body!.getReader();
-					const decoder = new TextDecoder();
-					let buffer = '';
-					let first = true;
-					const callback = (chunk: string, done: boolean) => {
-						if (done) {
-							return;
-						}
-						const lines = (buffer + chunk).split('\n');
-						buffer = lines.pop()!;
-						lines.forEach((line, i) => {
-							if (first && i === 0 && line === '') {
-								return;
-							}
-							(callbackFunction as any)({
-								chunk: tryParse(line),
-								first,
-							});
-							first = false;
-						});
-					};
-					while (true) {
-						const { done, value } = await reader.read();
-						if (done) {
-							break;
-						}
-						callback(decoder.decode(value), done);
-					}
+					await handleStream(res, callbackFunction);
 				} else if (contentType?.includes('multipart/form-data')) {
 					const formData = await res.formData();
 					return [deform(formData as FormData), null];
