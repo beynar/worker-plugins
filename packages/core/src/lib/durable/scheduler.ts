@@ -208,7 +208,7 @@ export class Scheduler<Tasks extends AnyRouter | undefined = undefined> {
 		const tasks = this.storage.sql.exec<SqlTask>('SELECT * FROM tasks WHERE time <= ?', [now]).toArray();
 
 		await this.server.invokePlugins('onAlarm', {
-			server: this.server,
+			object: this.server,
 		});
 
 		for (const row of tasks || []) {
@@ -301,7 +301,7 @@ export class Scheduler<Tasks extends AnyRouter | undefined = undefined> {
 			const { handler: handlerPath } = task;
 			const handler = getHandler(this.server.tasks, handlerPath.split('.'), true);
 			const event: ScheduleRequestEvent = {
-				server: this.server,
+				object: this.server,
 			};
 			await handler.call(event, task.payload);
 			return true;

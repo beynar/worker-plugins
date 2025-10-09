@@ -42,7 +42,7 @@ export class DurableServer<
 			await this.websocketManager.init();
 			await this.kv.init();
 			await this.scheduler.init();
-			await this.invokePlugins('blockConcurrencyWhile', { server: this });
+			await this.invokePlugins('blockConcurrencyWhile', { object: this });
 		});
 	}
 

@@ -58,7 +58,7 @@ export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out 
 				if (sessions.length) {
 					const event: WebsocketOutputRequestEvent = {
 						to: sessions,
-						server: this.server,
+						object: this.server,
 					};
 					const ctx = await handler?.call(event, data);
 					sessions.forEach(({ ws }) => {
@@ -121,14 +121,14 @@ export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out 
 
 	async onWebSocketError(ws: WebSocket, error: unknown) {
 		const session = deserializeSession(ws);
-		await this.server.invokePlugins('onWebSocketError', { ws, error, session, server: this.server });
+		await this.server.invokePlugins('onWebSocketError', { ws, error, session, object: this.server });
 		setTimeout(() => {
 			this.sendPresence();
 		});
 	}
 	async onWebSocketClose(ws: WebSocket, code: number, reason: string) {
 		const session = deserializeSession(ws);
-		await this.server.invokePlugins('onWebSocketClose', { ws, code, reason, session, server: this.server });
+		await this.server.invokePlugins('onWebSocketClose', { ws, code, reason, session, object: this.server });
 		setTimeout(() => {
 			this.sendPresence();
 		});
@@ -140,7 +140,7 @@ export class WebsocketManager<In extends AnyRouter | undefined = undefined, Out 
 			const event: WebsocketInputRequestEvent = {
 				ws,
 				session,
-				server: this.server,
+				object: this.server,
 			};
 			if (typeof message !== 'string') {
 				await this.server.invokePlugins('onArrayBufferMessage', {

@@ -1,0 +1,160 @@
+---
+title: "Quickstart"
+description: "Get started with Worker-Plugins in minutes"
+---
+
+# Worker-Plugins Quickstart
+
+Get your first Worker-Plugins application up and running in three simple steps.
+
+## Step 1: Create a new project
+
+Create a new directory for your project and initialize it:
+
+```bash
+npm create cloudflare@latest -- my-first-worker-plugins
+```
+
+## Step 2: Install Worker-Plugins
+
+```bash
+npm install worker-plugins
+```
+
+## Step 3: Create your first Worker
+
+Create `src/index.ts`:
+
+```typescript
+import { createWorker } from "worker-plugins";
+import { z } from "zod";
+
+const worker = createWorker()
+  .router((route) => ({
+    // HTTP endpoint that returns a greeting
+    hello: route
+      .input(z.object({ name: z.string() }))
+      .handle(async ({ input }) => {
+        return { message: `Hello ${input.name}!` };
+      }),
+
+    // Health check endpoint
+    health: route.handle(async () => {
+      return { status: "ok", timestamp: Date.now() };
+    }),
+  }))
+  .object("COUNTER", CounterDurableObject); // Register a Durable Object
+
+// Define a simple Durable Object
+export class CounterDurableObject extends createDurableObject() {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+  }
+
+  // HTTP procedure on the Durable Object
+  router = {
+    get: this.route.handle(async () => {
+      const count = (await this.kv.get("count")) || 0;
+      return { count: Number(count) };
+    }),
+
+    increment: this.route
+      .input(z.object({ amount: z.number().default(1) }))
+      .handle(async ({ input }) => {
+        const current = (await this.kv.get("count")) || 0;
+        const newCount = Number(current) + input.amount;
+        await this.kv.set("count", newCount);
+        return { count: newCount };
+      }),
+  };
+}
+
+export default worker.entrypoint;
+export type API = (typeof worker)["~infer"];
+```
+
+## Step 4: Configure Wrangler
+
+Create `wrangler.jsonc`:
+
+```json
+{
+  "name": "my-worker-plugins-app",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-01-01",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "COUNTER",
+        "class_name": "CounterDurableObject"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["CounterDurableObject"]
+    }
+  ]
+}
+```
+
+## Step 5: Create a client
+
+Once deployed, you can test your endpoints:
+
+```typescript
+import type { API } from "@your-worker";
+
+// Create a client with the API type
+const client = createClient<API>();
+
+const [res, error] = await client.hello({ name: "World" });
+
+if (error) {
+  console.error(error);
+} else {
+  // res type is { message: string }
+  console.log(res);
+}
+```
+
+## What's next?
+
+Now that you have a basic Worker-Plugins application running, explore these topics:
+
+<CardGroup cols={2}>
+  <Card
+    title="Worker"
+    icon="server"
+    href="/worker/introduction"
+  >
+    Learn how to create more complex Workers with routing, middleware, and queues.
+  </Card>
+
+{" "}
+
+<Card
+  title="Durable Objects"
+  icon="database"
+  href="/durable-objects/introduction"
+>
+  Master Durable Object development with WebSockets, task scheduling, and
+  advanced patterns.
+</Card>
+
+{" "}
+
+<Card title="Client" icon="code" href="/client/introduction">
+  Create type-safe clients for your APIs that can be used in web applications or
+  other services.
+</Card>
+
+  <Card
+    title="Plugin System"
+    icon="puzzle-piece"
+    href="/plugins/introduction"
+  >
+    Extend your application with reusable plugins for common functionality like authentication, caching, and more.
+  </Card>
+</CardGroup>

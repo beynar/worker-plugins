@@ -36,7 +36,6 @@ export const createApiProxy = (
 
 			if (key === 'then') {
 				const isConnect = path[path.length - 1] === 'connect';
-				const isDoc = path[path.length - 1] === 'doc';
 				// mean that it's the last path and the api is effectively called
 				if (!object.call) {
 					object.name = null;
@@ -44,9 +43,8 @@ export const createApiProxy = (
 				}
 				// If connect is called on the object, it means that we're are trying to connect to a websocket
 				object.websocket = isConnect;
-				object.doc = isDoc;
 
-				if (object.call || isConnect || isDoc) {
+				if (object.call || isConnect) {
 					path[0] = `(${object.name}:${object.id})`;
 				}
 				return (resolve: (value: any) => void, reject: (reason?: any) => void) => {

@@ -1,5 +1,6 @@
 import { DurableRequestEvent, Session, WebsocketInputRequestEvent } from '../rpc/requestEvent';
-import { AnyRouter, mergeRouters, MergeRouters } from '../rpc/router';
+import { AnyRouter, mergeRouters } from '../rpc/router';
+import { MergeExpose, type MergeRouters } from '../utils/types';
 import { AnyDurableServer, DurableServer } from './object';
 import { WS_API } from './websocket';
 import { TASK_API } from './scheduler';
@@ -11,16 +12,16 @@ export interface DurablePlugin {
 	ws_out?: AnyRouter;
 	tasks?: AnyRouter;
 	onFetch?: (opts: { event: DurableRequestEvent }) => MaybePromise<void>;
-	onAlarm?: (otps: { server: AnyDurableServer }) => MaybePromise<void>;
+	onAlarm?: (otps: { object: AnyDurableServer }) => MaybePromise<void>;
 	onWebSocketClose?: (opts: {
 		ws: WebSocket;
 		code: number;
 		reason: string;
 		session: Session;
-		server: AnyDurableServer;
+		object: AnyDurableServer;
 	}) => MaybePromise<void>;
-	blockConcurrencyWhile?: (opts: { server: AnyDurableServer }) => MaybePromise<void>;
-	onWebSocketError?: (opts: { ws: WebSocket; error: unknown; session: Session; server: AnyDurableServer }) => MaybePromise<void>;
+	blockConcurrencyWhile?: (opts: { object: AnyDurableServer }) => MaybePromise<void>;
+	onWebSocketError?: (opts: { ws: WebSocket; error: unknown; session: Session; object: AnyDurableServer }) => MaybePromise<void>;
 	onWebSocketMessage?: (opts: { event: WebsocketInputRequestEvent; input: any; isHandled: boolean }) => MaybePromise<void>;
 	onArrayBufferMessage?: (opts: { event: WebsocketInputRequestEvent; input: ArrayBuffer; isHandled: boolean }) => MaybePromise<void>;
 	onWebSocketOpen?: (opts: { event: DurableRequestEvent; session: Session }) => MaybePromise<void>;
@@ -37,8 +38,8 @@ export type ExtractPluggedRouters<K extends 'router' | 'ws_in' | 'ws_out' | 'tas
 	Exclude<P[number][K], undefined>
 >;
 
-type InferAllRouters<
-	D extends RestrictedDurableObject<AnyDurableServer>,
+export type InferAllRouters<
+	D extends { router?: AnyRouter; ws_in?: AnyRouter; ws_out?: AnyRouter; tasks?: AnyRouter; queues?: AnyRouter },
 	PLUGINS extends DurablePlugin[],
 	key extends 'router' | 'ws_in' | 'ws_out' | 'tasks'
 > = D[key] extends AnyRouter
@@ -90,8 +91,8 @@ export type RestrictedDurableObject<T> = Omit<T, 'invokePlugins' | 'fetch' | 'we
 
 export const createDurableObject = <PLUGINS extends DurablePlugin[]>(...plugins: PLUGINS) => {
 	const merged = mergePlugins(...plugins);
-	type EXPOSITION = UnionToIntersection<Exclude<PLUGINS[number]['expose'], undefined>>;
-	let EXPOSITION = {} as EXPOSITION;
+
+	let EXPOSITION = {} as MergeExpose<PLUGINS>;
 
 	class DurableObjectWithPlugins<
 		Self extends RestrictedDurableObject<DurableServer<AnyRouter, AnyRouter, AnyRouter, AnyRouter, PLUGINS>>
@@ -102,16 +103,16 @@ export const createDurableObject = <PLUGINS extends DurablePlugin[]>(...plugins:
 		declare send: WS_API<InferAllRouters<Self, PLUGINS, 'ws_out'>>;
 		declare schedule: TASK_API<InferAllRouters<Self, PLUGINS, 'tasks'>>;
 		declare onFetch?: (opts: { event: DurableRequestEvent }) => MaybePromise<void>;
-		declare onAlarm?: (otps: { server: AnyDurableServer }) => MaybePromise<void>;
+		declare onAlarm?: (otps: { object: AnyDurableServer }) => MaybePromise<void>;
 		declare onWebSocketClose?: (opts: {
 			ws: WebSocket;
 			code: number;
 			reason: string;
 			session: Session;
-			server: AnyDurableServer;
+			object: AnyDurableServer;
 		}) => MaybePromise<void>;
-		declare blockConcurrencyWhile?: (opts: { server: AnyDurableServer }) => MaybePromise<void>;
-		declare onWebSocketError?: (opts: { ws: WebSocket; error: unknown; session: Session; server: AnyDurableServer }) => MaybePromise<void>;
+		declare blockConcurrencyWhile?: (opts: { object: AnyDurableServer }) => MaybePromise<void>;
+		declare onWebSocketError?: (opts: { ws: WebSocket; error: unknown; session: Session; object: AnyDurableServer }) => MaybePromise<void>;
 		declare onWebSocketMessage?: (opts: { event: WebsocketInputRequestEvent; input: any; isHandled: boolean }) => MaybePromise<void>;
 		declare onArrayBufferMessage?: (opts: {
 			event: WebsocketInputRequestEvent;
@@ -121,7 +122,7 @@ export const createDurableObject = <PLUGINS extends DurablePlugin[]>(...plugins:
 		declare onWebSocketOpen?: (opts: { event: DurableRequestEvent; session: Session }) => MaybePromise<void>;
 		// @ts-ignore TS4094
 
-		get = <K extends keyof EXPOSITION>(key: K): EXPOSITION[K] => {
+		get = <K extends keyof typeof EXPOSITION>(key: K): (typeof EXPOSITION)[K] => {
 			return EXPOSITION[key];
 		};
 
@@ -157,11 +158,12 @@ export const createDurableObject = <PLUGINS extends DurablePlugin[]>(...plugins:
 		}
 
 		declare ['~infer']: {
-			router: InferAllRouters<Self, PLUGINS, 'router'>;
-			ws_out: InferAllRouters<Self, PLUGINS, 'ws_out'>;
-			ws_in: InferAllRouters<Self, PLUGINS, 'ws_in'>;
-			tasks: InferAllRouters<Self, PLUGINS, 'tasks'>;
-			exposed: EXPOSITION;
+			router: MergeRouters<Self, PLUGINS, 'router'>;
+			ws_out: MergeRouters<Self, PLUGINS, 'ws_out'>;
+			ws_in: MergeRouters<Self, PLUGINS, 'ws_in'>;
+			tasks: MergeRouters<Self, PLUGINS, 'tasks'>;
+			exposed: MergeExpose<PLUGINS>;
+			plugins: PLUGINS;
 		};
 	}
 

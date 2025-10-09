@@ -1,5 +1,6 @@
 import { DurableServerConstructor } from '../durable/object';
-import { AnyDurableInfer } from '../durable/plugin';
+import { AnyDurableInfer, AnyRestrictedDurableObject } from '../durable/plugin';
+import { AnyRouter } from '../rpc';
 
 export type OmitNever<T> = Pick<
 	T,
@@ -37,7 +38,7 @@ export type Get<T, K extends string> = K extends `${infer P}.${infer Rest}`
 		: never
 	: K extends keyof T
 	? T[K]
-	: 'never';
+	: never;
 
 export type RouterOf<DO extends DurableServerConstructor, T extends 'router' | 'ws_out' | 'ws_in' | 'tasks'> = DO extends new (
 	ctx: DurableObjectState,
@@ -47,3 +48,46 @@ export type RouterOf<DO extends DurableServerConstructor, T extends 'router' | '
 		? Infer[T]
 		: never
 	: never;
+
+type AnyPlugin = {
+	router?: AnyRouter;
+	ws_in?: AnyRouter;
+	ws_out?: AnyRouter;
+	tasks?: AnyRouter;
+	queues?: AnyRouter;
+	expose?: Record<string, any>;
+};
+
+type AnyConfig = {
+	router?: AnyRouter;
+	ws_in?: AnyRouter;
+	ws_out?: AnyRouter;
+	tasks?: AnyRouter;
+	queues?: AnyRouter;
+};
+type MergeWorkerRouters<
+	D extends AnyConfig,
+	Plugins extends AnyPlugin[] | undefined,
+	key extends 'router' | 'ws_in' | 'ws_out' | 'tasks' | 'queues'
+> = D[key] extends AnyRouter ? (Plugins extends AnyPlugin[] ? IntersectArrayProp<Plugins, key> & D[key] : D[key]) : never;
+
+type MergeDurableObjectRouters<
+	D extends AnyConfig,
+	Plugins extends AnyPlugin[] | undefined,
+	key extends 'router' | 'ws_in' | 'ws_out' | 'tasks' | 'queues'
+> = D[key] extends AnyRouter
+	? Plugins extends AnyPlugin[]
+		? UnionToIntersection<Exclude<Plugins[number][key], undefined>> & D[key]
+		: D[key]
+	: never;
+
+// Single interface to merge routers wether its a worker or a durable object. This to clarify the code a little bit.
+export type MergeRouters<
+	D extends AnyConfig,
+	Plugins extends AnyPlugin[] | undefined,
+	key extends 'router' | 'ws_in' | 'ws_out' | 'tasks' | 'queues'
+> = D extends AnyRestrictedDurableObject ? MergeDurableObjectRouters<D, Plugins, key> : MergeWorkerRouters<D, Plugins, key>;
+
+export type MergeExpose<Plugins extends AnyPlugin[] | undefined> = Plugins extends AnyPlugin[]
+	? IntersectArrayProp<Plugins, 'expose'>
+	: undefined;

@@ -8,7 +8,7 @@ import {
 	GetObjectJurisdictionOrLocationHint,
 	createWorkerEvent,
 } from '../rpc';
-import { IntersectArrayProp, MaybePromise, SafeReturnType } from '../utils/types';
+import { MaybePromise, MergeExpose, MergeRouters, SafeReturnType } from '../utils/types';
 import { FLARERROR } from '../error';
 import { Middleware } from '../rpc';
 import { DurableServerConstructor } from '../durable/object';
@@ -115,15 +115,13 @@ export class Worker<Config extends WorkerConfig = {}> {
 	 * Add plugins to the worker
 	 */
 	use = <Plugins extends WorkerPlugin[]>(...plugins: Plugins) => {
-		const newPlugins = [...(this.config.plugins || []), ...plugins] as [
-			...(Config['plugins'] extends WorkerPlugin[] ? Config['plugins'] : []),
-			...Plugins
-		];
+		type NewPlugins = Config['plugins'] extends WorkerPlugin[] ? [...Config['plugins'], ...Plugins] : Plugins;
+		const newPlugins = [...(this.config.plugins || []), ...plugins] as NewPlugins;
 		return new Worker({
 			...this.config,
 			plugins: newPlugins,
 		} as Omit<Config, 'plugins'> & {
-			plugins: [...(Config['plugins'] extends WorkerPlugin[] ? Config['plugins'] : []), ...Plugins];
+			plugins: NewPlugins;
 		});
 	};
 
@@ -135,7 +133,7 @@ export class Worker<Config extends WorkerConfig = {}> {
 		return new Worker({
 			...this.config,
 			router: {
-				...(this.config.router || {}),
+				...(this.config?.router || {}),
 				...newRouter,
 			},
 		} as Config & { router: (Config['router'] extends AnyRouter ? Config['router'] : {}) & R });
@@ -144,15 +142,19 @@ export class Worker<Config extends WorkerConfig = {}> {
 	/**
 	 * Define or extend queue handlers
 	 */
-	queues = <const Q>(fn: (t: typeof this.queue) => Q) => {
+	queues = <K extends string, const Q>(envKey: K, fn: (t: typeof this.queue) => Q) => {
+		type NewQueues = Config['queues'] extends Record<string, AnyRouter> ? Config['queues'] & Record<K, Q> : Record<K, Q>;
 		const newQueues = fn(this.queue);
 		return new Worker({
 			...this.config,
 			queues: {
 				...(this.config.queues || {}),
-				...newQueues,
+				[envKey]: {
+					...(this.config.queues?.[envKey] || {}),
+					...newQueues,
+				},
 			},
-		} as Config & { queues: (Config['queues'] extends AnyRouter ? Config['queues'] : {}) & Q });
+		} as Config & { queues: NewQueues });
 	};
 
 	/**
@@ -231,12 +233,10 @@ export class Worker<Config extends WorkerConfig = {}> {
 	};
 
 	declare '~infer': {
-		router: Config['router'] & (Config['plugins'] extends WorkerPlugin[] ? IntersectArrayProp<Config['plugins'], 'router'> : {});
-		queues: Config['queues'] & (Config['plugins'] extends WorkerPlugin[] ? IntersectArrayProp<Config['plugins'], 'queues'> : {});
-		exposed: Config['plugins'] extends WorkerPlugin[] ? IntersectArrayProp<Config['plugins'], 'expose'> : {};
-		objects: Config['objects'] extends Record<string, [DurableServerConstructor, GetObjectJurisdictionOrLocationHint]>
-			? Config['objects']
-			: {};
+		router: MergeRouters<Config, Config['plugins'], 'router'>;
+		queues: MergeRouters<Config, Config['plugins'], 'queues'>;
+		exposed: MergeExpose<Config['plugins']>;
+		objects: Config['objects'];
 		middleware: Config['plugins'] extends WorkerPlugin[] ? MergeMiddlewares<Config['plugins']> : never;
 		plugins: Config['plugins'];
 	};

@@ -1,0 +1,355 @@
+---
+title: "Introduction"
+description: "Learn how to create Workers with routing, middleware, plugins, cron jobs, and Durable Object integration"
+---
+
+## Worker Structure
+
+A Worker has several key components:
+
+1. **Router**: Defines HTTP endpoints and their handlers
+2. **Queues**: Processes background jobs
+3. **Cron Jobs**: Handles scheduled tasks
+4. **Plugins**: Extends functionality with reusable middleware and utilities
+5. **Durable Objects**: Registers Durable Object classes
+
+All of these components are optional and are accessible through a common chainable API.
+
+## Creating a Basic Worker
+
+Start with a simple Worker that handles HTTP requests:
+
+```typescript
+import { createWorker } from "worker-plugins";
+import { z } from "zod";
+
+const worker = createWorker().router((t) => ({
+  // Simple health check
+  health: t.handle(async () => {
+    return { status: "ok", timestamp: Date.now() };
+  }),
+
+  // API endpoint with input validation
+  users: {
+    get: t.input(z.object({ id: z.string() })).handle(async ({ input }) => {
+      const user = await getUserFromDatabase(input.id);
+      return user;
+    }),
+
+    // Nested routes
+    create: t
+      .input(
+        z.object({
+          name: z.string().min(1),
+          email: z.string().email(),
+        })
+      )
+      .handle(async ({ input }) => {
+        const user = await createUserInDatabase(input);
+        return { id: user.id, ...input };
+      }),
+  },
+}));
+
+export default worker.entrypoint;
+```
+
+## Routing
+
+Routes define how HTTP requests are mapped to procedure handlers. Worker-Plugins provides a hierarchical routing system that automatically handles URL matching and parameter extraction.
+
+```typescript
+const worker = createWorker().router((route) => ({
+  // Simple endpoint
+  health: route.handle(async () => {
+    return { status: "ok" };
+  }),
+
+  // Nested API routes
+  api: {
+    v1: {
+      users: {
+        get: route.handle(async ({ event }) => {
+          // Access URL parameters via event.path
+          return await getUsers();
+        }),
+        create: route.input(userSchema).handle(async ({ input }) => {
+          return await createUser(input);
+        }),
+      },
+    },
+  },
+}));
+```
+
+Routes support:
+
+- **Hierarchical structure** for organizing complex APIs
+- **Automatic parameter extraction** from URLs
+- **Input validation** with Standard Schema
+- **Middleware integration** for cross-cutting concerns
+
+For detailed information about routing patterns, nested routes, parameter handling, and middleware usage, see the [Routing documentation](/worker/routing).
+
+## Queue Handling
+
+Process background jobs with the queue system:
+
+```typescript
+const worker = createWorker().queues((queue) => ({
+  email: queue.handle(async ({ message, event }) => {
+    // message: Individual message being processed
+    // event: QueueRequestEvent object - see RPC documentation for details
+    await sendEmail(message.body);
+  }),
+
+  // Queue with input validation
+  notifications: queue
+    .input(z.object({ userId: z.string(), type: z.string() }))
+    .handle(async ({ input, event }) => {
+      // input: Validated input data
+      // event: QueueRequestEvent object - see RPC documentation for details
+      await sendNotification(input.userId, input.type);
+    }),
+}));
+```
+
+All queue handlers receive a [request event object](/rpc#requestevent-types) as their second parameter (after the message), providing access to the execution context, environment variables, and other request context. For detailed information about the request event object, see the [RPC documentation](/rpc#requestevent-types).
+
+## Cron Jobs
+
+Schedule recurring tasks using cron expressions:
+
+```typescript
+const worker = createWorker()
+  .cron("0 0 * * *", async () => {
+    // Run daily cleanup at midnight
+    await cleanupExpiredData();
+  })
+  .cron("*/30 * * * *", async () => {
+    // Run every 30 minutes
+    await updateCache();
+  });
+```
+
+> **Note:** Cron jobs defined in your worker code must also be configured in your `wrangler.jsonc` file to actually run. The cron schedule string in your code must match the schedule defined in Wrangler configuration.
+
+## Plugins
+
+Extend worker functionality with reusable plugins:
+
+```typescript
+import { authPlugin } from "./plugins/auth";
+import { loggingPlugin } from "./plugins/logging";
+
+const worker = createWorker()
+  .use(authPlugin, loggingPlugin) // Add plugins
+  .router((t) => ({
+    profile: t.handle(async ({ ctx }) => {
+      // ctx now includes data from auth and logging plugins
+      return { user: ctx.user };
+    }),
+  }));
+```
+
+Plugins can provide:
+
+- **Middleware**: Automatic authentication, logging, rate limiting that runs before route handlers
+- **Exposed utilities**: Helper functions and data available in the `ctx` object of route handlers
+- **Initialization**: Setup logic that runs on each request
+
+When plugins are added to a worker using `.use()`, their middleware functions run automatically and their exposed properties are merged into the `ctx` object that all route handlers receive. This allows plugins to seamlessly augment the context available to your route handlers without requiring changes to individual routes.
+
+For more information about creating and using plugins, see the [Plugin System documentation](/plugins/introduction).
+
+## Durable Object Integration
+
+Workers route requests to Durable Objects automatically:
+
+```typescript
+const worker = createWorker()
+  .router((route) => ({
+    // HTTP request routes to Durable Object
+    users: {
+      create: route.handle(async ({ event }) => {
+        return await event.env.USERS.getByName("default").create({
+          name: "John",
+          email: "john@example.com",
+        });
+      }),
+    },
+  }))
+  .object("USERS", UserService); // Register the Durable Object
+```
+
+## Worker Lifecycle Hooks
+
+Worker lifecycle hooks allow you to execute code at different phases of request processing. These hooks run at the worker level and are separate from route-level middleware.
+
+### Before Hooks
+
+Before hooks run **before** any routing logic is executed. They receive the request event and can perform setup tasks, logging, or early request processing.
+
+```typescript
+const worker = createWorker()
+  .before(async ({ event }) => {
+    // Runs before any routing logic
+    console.log(
+      `Incoming request: ${event.request.method} ${event.request.url}`
+    );
+
+    // You can modify the request or perform early validation
+    const userAgent = event.request.headers.get("User-Agent");
+    if (userAgent?.includes("bot")) {
+      console.log("Bot detected, request may be rate limited");
+    }
+  })
+  .router((route) => ({
+    // ... routes
+  }));
+```
+
+**Parameters:**
+
+- `event`: The [WorkerRequestEvent](/rpc#requestevent-types) object containing request details, environment, and context
+
+### After Hooks
+
+After hooks run **after** a successful response has been generated but before it's sent to the client. They receive both the request event and the response object.
+
+```typescript
+const worker = createWorker()
+  .after(async ({ event, response }) => {
+    // Runs after successful response generation
+    console.log(`Response: ${response.status} for ${event.request.url}`);
+
+    // You can modify response headers or perform post-processing
+    if (response.status === 200) {
+      console.log("Successful request processed");
+    }
+
+    // Log response time
+    const endTime = Date.now();
+    const startTime = event.request.headers.get("X-Request-Start");
+    if (startTime) {
+      console.log(`Request took ${endTime - parseInt(startTime)}ms`);
+    }
+  })
+  .router((route) => ({
+    // ... routes
+  }));
+```
+
+**Parameters:**
+
+- `event`: The [WorkerRequestEvent](/rpc#requestevent-types) object
+- `response`: The `Response` object that will be sent to the client
+
+### Error Hooks
+
+Error hooks run when an error occurs during request processing. They can handle errors, transform error responses, or perform cleanup tasks.
+
+```typescript
+const worker = createWorker()
+  .onError(async ({ error, event }) => {
+    // Handle any errors that occur during request processing
+    console.error("Worker error:", error);
+
+    // You can return a custom error response
+    if (error.message?.includes("VALIDATION_ERROR")) {
+      return new Response(
+        JSON.stringify({
+          error: "Invalid input provided",
+          details: error.details,
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Return generic error for security
+    return new Response("Internal Server Error", { status: 500 });
+  })
+  .router((route) => ({
+    // ... routes
+  }));
+```
+
+**Parameters:**
+
+- `error`: The error object that was thrown (can be a standard Error or custom error types)
+- `event`: The [WorkerRequestEvent](/rpc#requestevent-types) object
+
+**Note:** If an error hook returns a `Response`, that response will be sent to the client. If it doesn't return a response, the framework will use a default error response.
+
+### Complete Example
+
+```typescript
+const worker = createWorker()
+  .before(async ({ event }) => {
+    // Log all incoming requests
+    console.log(`${event.request.method} ${event.request.url}`);
+  })
+  .after(async ({ event, response }) => {
+    // Log successful responses
+    if (response.status < 400) {
+      console.log(`✓ ${response.status} for ${event.request.url}`);
+    }
+  })
+  .onError(async ({ error, event }) => {
+    // Centralized error handling
+    console.error(`✗ Error in ${event.request.url}:`, error);
+
+    return new Response(JSON.stringify({ error: "Something went wrong" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  })
+  .router((route) => ({
+    api: {
+      users: route.procedure().handle(async ({ event }) => {
+        // Your route logic here
+        return { users: [] };
+      }),
+    },
+  }));
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Routing Deep Dive"
+    icon="route"
+    href="/worker/routing"
+  >
+    Learn advanced routing patterns, parameter handling, and nested routes.
+  </Card>
+
+{" "}
+
+<Card title="Queue Processing" icon="queue" href="/worker/queues">
+  Master background job processing with queues and reliable message handling.
+</Card>
+
+{" "}
+
+<Card
+  title="Durable Object Integration"
+  icon="database"
+  href="/worker/durable-objects"
+>
+  Understand how Workers communicate with Durable Objects and manage their
+  lifecycle.
+</Card>
+
+  <Card
+    title="Plugin System"
+    icon="plug"
+    href="/plugins/introduction"
+  >
+    Learn how to create and use plugins to extend worker functionality.
+  </Card>
+</CardGroup>

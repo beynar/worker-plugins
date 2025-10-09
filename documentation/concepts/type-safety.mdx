@@ -1,0 +1,261 @@
+---
+title: "Type Safety"
+description: "How Worker-Plugins achieves end-to-end type safety across your entire application"
+---
+
+# Type Safety
+
+Worker-Plugins provides comprehensive type safety throughout your entire application stack—from procedure definitions to client calls. This ensures that API contracts are maintained and errors are caught at compile time.
+
+## Input Validation with Zod
+
+All procedures use Zod schemas for input validation:
+
+```typescript
+import { z } from "zod";
+
+const userSchema = z.object({
+  name: z.string().min(1).max(100),
+  email: z.string().email(),
+  age: z.number().min(18).max(120),
+  tags: z.array(z.string()).optional(),
+});
+
+// TypeScript infers the input type automatically
+type UserInput = z.infer<typeof userSchema>;
+// Result: { name: string, email: string, age: number, tags?: string[] }
+```
+
+## Procedure Type Safety
+
+When you define a procedure, TypeScript automatically infers the types:
+
+```typescript
+const createUser = t
+  .procedure()
+  .input(userSchema)
+  .handle(async ({ input }) => {
+    // input is fully typed: UserInput
+    const user = await createUserInDB(input);
+    return { id: user.id, ...input };
+  });
+
+// TypeScript knows the return type
+type CreateUserResult = {
+  id: string;
+  name: string;
+  email: string;
+  age: number;
+  tags?: string[];
+};
+```
+
+## Router Type Merging
+
+When you merge routers (through plugins or nested structures), types are automatically merged:
+
+```typescript
+const userRouter = {
+  get: t.input(z.object({ id: z.string() })).handle(getUser),
+  create: t.input(userSchema).handle(createUser),
+};
+
+const postRouter = {
+  get: t.input(z.object({ id: z.string() })).handle(getPost),
+  create: t.input(postSchema).handle(createPost),
+};
+
+// Merged router has all types preserved
+const apiRouter = {
+  users: userRouter,
+  posts: postRouter,
+};
+```
+
+## Client Type Safety
+
+The client SDK is fully typed based on your procedure definitions:
+
+```typescript
+const client = createClient<WorkerInfer>({
+  endpoint: "https://my-worker.workers.dev",
+});
+
+// TypeScript knows all available procedures
+await client.users.get({ id: "123" });
+await client.users.create({
+  name: "John",
+  email: "john@example.com",
+  age: 25,
+});
+
+// TypeScript catches errors at compile time
+await client.users.create({
+  name: "", // Error: name is too short
+  email: "invalid-email", // Error: invalid email format
+  age: "25", // Error: age should be number, not string
+});
+```
+
+## Error Type Safety
+
+Errors maintain type information across the network boundary:
+
+```typescript
+try {
+  await client.users.create(userData);
+} catch (error) {
+  // error is typed with specific error codes
+  switch (error.code) {
+    case "VALIDATION_ERROR":
+      // error.details contains validation error information
+      console.log(error.details.issues);
+      break;
+    case "DATABASE_ERROR":
+      // error.message contains database error details
+      console.log(error.message);
+      break;
+    default:
+      // error has standard Error properties
+      console.log(error.message);
+  }
+}
+```
+
+## Plugin Type Merging
+
+When plugins contribute routers, their types are merged with the base router:
+
+```typescript
+const authPlugin = {
+  router: {
+    login: t.input(loginSchema).handle(login),
+    logout: t.handle(logout),
+  },
+};
+
+const worker = createWorker()
+  .use(authPlugin) // Adds login/logout procedures
+  .router((t) => ({
+    users: userRouter, // Already has get/create procedures
+  }));
+
+// Client has access to all procedures: login, logout, users.get, users.create
+```
+
+## Advanced Type Patterns
+
+### Conditional Types
+
+Use TypeScript's conditional types for complex scenarios:
+
+```typescript
+type UserResponse<T extends boolean> = T extends true
+  ? { user: User; posts: Post[] }
+  : { user: User };
+
+const getUserWithPosts = t
+  .input(
+    z.object({
+      id: z.string(),
+      includePosts: z.boolean().default(false),
+    })
+  )
+  .handle(async ({ input }) => {
+    const user = await getUser(input.id);
+    const posts = input.includePosts ? await getUserPosts(input.id) : [];
+
+    return {
+      user,
+      posts: input.includePosts ? posts : undefined,
+    } as UserResponse<typeof input.includePosts>;
+  });
+```
+
+### Generic Types
+
+Create reusable generic procedures:
+
+```typescript
+const createCrudRouter = <T extends z.ZodSchema, U extends z.ZodSchema>(
+  resourceName: string,
+  createSchema: T,
+  updateSchema: U
+) => ({
+  [`get${resourceName}`]: t
+    .input(z.object({ id: z.string() }))
+    .handle(async ({ input }) => {
+      // Type-safe get operation
+    }),
+  [`create${resourceName}`]: t.input(createSchema).handle(async ({ input }) => {
+    // Type-safe create operation
+  }),
+  [`update${resourceName}`]: t
+    .input(
+      z.object({
+        id: z.string(),
+        data: updateSchema,
+      })
+    )
+    .handle(async ({ input }) => {
+      // Type-safe update operation
+    }),
+});
+```
+
+## Type-Safe Middleware
+
+Middleware functions maintain type safety:
+
+```typescript
+const authMiddleware = t.middleware(async ({ event, next }) => {
+  const token = event.request.headers.get("Authorization");
+  if (!token) throw error("UNAUTHORIZED");
+
+  const user = await validateToken(token);
+
+  // Return typed context
+  return next({
+    user, // This becomes available in procedure handlers
+    token,
+  });
+});
+
+const protectedRouter = t
+  .use(authMiddleware) // All procedures have access to user context
+  .procedure()
+  .handle(async ({ ctx }) => {
+    // ctx.user is fully typed
+    return { message: `Hello ${ctx.user.name}!` };
+  });
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Worker API"
+    icon="server"
+    href="/worker/introduction"
+  >
+    Start building Workers with type-safe routing and procedures.
+  </Card>
+
+{" "}
+
+<Card
+  title="Durable Objects"
+  icon="database"
+  href="/durable-objects/introduction"
+>
+  Learn how to create type-safe Durable Objects with built-in services.
+</Card>
+
+  <Card
+    title="Client SDK"
+    icon="code"
+    href="/client/introduction"
+  >
+    Create type-safe clients for your APIs that work in any JavaScript environment.
+  </Card>
+</CardGroup>

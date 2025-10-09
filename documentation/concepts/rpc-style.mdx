@@ -1,0 +1,218 @@
+---
+title: "RPC-Style Communication"
+description: "How Worker-Plugins implements type-safe RPC communication between Workers and Durable Objects"
+---
+
+# RPC-Style Communication
+
+Worker-Plugins transforms traditional HTTP request/response patterns into type-safe RPC (Remote Procedure Call) communication. This approach makes distributed systems feel like local function calls.
+
+## Traditional HTTP vs RPC
+
+### Traditional HTTP Approach
+
+In traditional Cloudflare Workers development, you typically:
+
+1. Make HTTP requests to Durable Objects
+2. Manually serialize/deserialize data
+3. Handle routing and error cases manually
+4. Manage Durable Object IDs and lifecycle
+
+```typescript
+// Traditional approach - lots of boilerplate
+const response = await fetch(`https://my-do.my-worker.workers.dev/api/users`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ name: "John", email: "john@example.com" }),
+});
+
+if (!response.ok) {
+  throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+}
+
+const user = await response.json();
+```
+
+### Worker-Plugins RPC Approach
+
+Worker-Plugins makes this feel like a local function call:
+
+```typescript
+// RPC approach - feels like local functions
+const user = await client.USERS().create({
+  name: "John",
+  email: "john@example.com",
+});
+```
+
+## How RPC Works in Worker-Plugins
+
+### 1. Procedure Definition
+
+Define procedures in your Durable Objects:
+
+```typescript
+export class UserService extends createDurableObject() {
+  router = {
+    create: this.route
+      .input(
+        z.object({
+          name: z.string(),
+          email: z.string().email(),
+        })
+      )
+      .handle(async ({ input }) => {
+        const user = await createUserInDatabase(input);
+        return { id: user.id, ...input };
+      }),
+
+    get: this.route
+      .input(z.object({ id: z.string() }))
+      .handle(async ({ input }) => {
+        return await getUserFromDatabase(input.id);
+      }),
+  };
+}
+```
+
+### 2. Automatic Routing
+
+Worker-Plugins automatically routes calls to the correct Durable Object instance:
+
+```typescript
+// Worker routes HTTP requests to Durable Objects
+const worker = createWorker()
+  .router((t) => ({
+    // HTTP: POST /users -> routes to USERS Durable Object
+    users: {
+      create: t.handle(async ({ event }) => {
+        return await event.env.USERS.getByName("default").create({
+          name: "John",
+          email: "john@example.com",
+        });
+      }),
+    },
+  }))
+  .object("USERS", UserService);
+```
+
+### 3. Type-Safe Client Calls
+
+Generate type-safe clients for external applications:
+
+```typescript
+// Type-safe client
+const client = createClient<WorkerInfer>({
+  endpoint: "https://my-worker.workers.dev",
+});
+
+// Fully typed calls
+const newUser = await client.users.create({
+  name: "John",
+  email: "john@example.com", // TypeScript validates email format
+});
+
+const user = await client.users.get({ id: newUser.id });
+```
+
+## Benefits of RPC Style
+
+### 1. Type Safety
+
+- **Input validation** with Zod schemas
+- **Output type inference** from procedure definitions
+- **Compile-time error checking** for API mismatches
+
+### 2. Simplified Error Handling
+
+```typescript
+try {
+  const result = await client.users.create(userData);
+} catch (error) {
+  if (error.code === "VALIDATION_ERROR") {
+    // Handle validation errors
+  } else if (error.code === "DATABASE_ERROR") {
+    // Handle database errors
+  }
+}
+```
+
+### 3. Automatic Serialization
+
+Worker-Plugins handles:
+
+- **JSON serialization/deserialization** of complex objects
+- **Date handling** and other special types
+- **Error transformation** across the network boundary
+
+### 4. Consistent API Surface
+
+Whether you're calling from:
+
+- Worker to Durable Object
+- Client to Worker
+- Worker to Worker
+
+The API surface remains consistent and type-safe.
+
+## Advanced RPC Patterns
+
+### Nested Routers
+
+Organize complex APIs with nested routing:
+
+```typescript
+const worker = createWorker().router((t) => ({
+  api: {
+    v1: {
+      users: {
+        get: t.handle(getUsers),
+        create: t.input(userSchema).handle(createUser),
+      },
+      posts: {
+        get: t.handle(getPosts),
+        create: t.input(postSchema).handle(createPost),
+      },
+    },
+  },
+}));
+```
+
+### Middleware Integration
+
+Apply middleware at any level:
+
+```typescript
+const worker = createWorker()
+  .use(authMiddleware) // Apply to all procedures
+  .router((t) => ({
+    admin: {
+      // Inherits auth middleware
+      users: t.use(adminOnlyMiddleware).handle(getAllUsers),
+    },
+    public: {
+      // No auth required
+      users: t.handle(getPublicUsers),
+    },
+  }));
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Type Safety Guide"
+    icon="shield-check"
+    href="/concepts/type-safety"
+  >
+    Learn how Worker-Plugins achieves end-to-end type safety across your entire application.
+  </Card>
+
+  <Card
+    title="Worker API"
+    icon="server"
+    href="/worker/introduction"
+  >
+    Start building Workers with routing, middleware, and Durable Object integration.
+  </Card>
+</CardGroup>

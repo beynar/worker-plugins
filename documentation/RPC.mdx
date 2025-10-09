@@ -1,0 +1,262 @@
+---
+title: "RPC System"
+description: "Worker-plugins features a powerful RPC system inspired by tRPC but specifically designed for Cloudflare Workers and Durable Objects. This system enables you to define type-safe handlers for your workers, Durable Objects, WebSocket messages, queue processing, and scheduled tasks with a unified API.
+"
+---
+
+## Key Features
+
+- **Type Safety**: Full TypeScript support with inferred types for inputs, outputs, and events
+- **Multiple Procedure Types**: Support for worker routes, durable object methods, WebSocket handlers, queue consumers, and scheduled tasks
+- **Standard Schema Validation**: Built-in input validation using the Standard Schema v1 specification
+- **Middleware Support**: Chain middleware functions for cross-cutting concerns like authentication, logging, and rate limiting
+- **Unified API**: Single consistent API across all procedure types
+
+## Procedure Types
+
+The RPC system supports six different procedure types:
+
+- **`worker`**: HTTP request handlers for Cloudflare Workers
+- **`durable`**: Methods on Durable Objects
+- **`queue`**: Queue message consumers
+- **`in`**: Incoming WebSocket message handlers
+- **`out`**: Outgoing WebSocket message handlers (broadcasting)
+- **`schedule`**: Scheduled task handlers (cron jobs)
+
+## Input Validation with Standard Schema
+
+Input validation is handled through the Standard Schema v1 specification, allowing you to define schemas using popular validation libraries like Zod, Yup, or Valibot.
+
+```typescript
+import { createRouter } from "worker-plugins";
+import { z } from "zod";
+
+const router = createRouter("worker")
+  .procedure()
+  .input(
+    z.object({
+      name: z.string(),
+      age: z.number().min(0),
+    })
+  )
+  .handle(({ input, event }) => {
+    // input is fully typed: { name: string, age: number }
+    return { message: `Hello ${input.name}, you are ${input.age} years old` };
+  });
+```
+
+The schema is validated automatically before your handler function is called. If validation fails, an error response is returned to the client.
+
+## Middleware Support
+
+Middleware functions can be chained using the `.use()` method to add cross-cutting concerns like authentication, logging, or request transformation.
+
+```typescript
+const authMiddleware = (event) => {
+  const token = event.request.headers.get("authorization");
+  if (!token) {
+    throw new Error("Unauthorized");
+  }
+  return { userId: extractUserIdFromToken(token) };
+};
+
+const loggingMiddleware = (event) => {
+  console.log(`${event.request.method} ${event.request.url}`);
+  return { requestId: generateRequestId() };
+};
+
+const router = createRouter("worker")
+  .use(authMiddleware, loggingMiddleware)
+  .procedure()
+  .handle(({ input, ctx }) => {
+    // ctx contains merged data from all middleware including plugin middlewares
+    // ctx = { userId: string, requestId: string, ...pluginMiddlewareData }
+    return { success: true };
+  });
+```
+
+Middleware functions receive the request event and return an object that gets merged into the handler's `ctx` parameter.
+
+## Handle Function Parameters
+
+Every handler function receives a payload with three main parameters:
+
+### `event`
+
+The request event object, which varies based on the procedure type (see [RequestEvent Types](#requestevent-types) below).
+
+### `input`
+
+The validated input data (when using `.input()`) or `never` (when using `.handle()` without input validation).
+
+### `ctx`
+
+An object containing merged data from all middleware functions in the chain, including both router-level middlewares (defined with `.use()`) and plugin-level middlewares. The exact contents depend on what middleware is configured in your application.
+
+```typescript
+// With input validation
+.procedure()
+.input(schema)
+.handle(({ event, input, ctx }) => {
+  // event: RequestEvent (varies by procedure type)
+  // input: Inferred from schema (e.g., { name: string, age: number })
+  // ctx: Merged middleware data from router and plugin middlewares
+});
+
+// Without input validation
+.procedure()
+.handle(({ event, ctx }) => {
+  // input parameter is not available
+  // ctx: Merged middleware data from router and plugin middlewares
+});
+```
+
+## RequestEvent Types
+
+Each procedure type has its own RequestEvent interface that provides access to the relevant context and data for that type of operation.
+
+### WorkerRequestEvent
+
+Used for HTTP request handlers in Cloudflare Workers.
+
+```typescript
+type WorkerRequestEvent = {
+  request: CfRequest; // The incoming HTTP request
+  env: Env; // Environment variables
+  ctx: ExecutionContext; // Worker execution context
+  path: string[]; // URL path segments
+  meta: Meta; // Request metadata
+  url: URL; // Parsed request URL
+  cookies: Cookies; // Request cookies
+};
+```
+
+**Properties:**
+
+- `request`: The standard Cloudflare `Request` object with additional Cloudflare-specific properties
+- `env`: Environment variables and bindings (KV stores, Durable Object namespaces, etc.)
+- `ctx`: Cloudflare Worker execution context (for waiting on async operations)
+- `path`: Array of URL path segments (e.g., `['api', 'users', '123']` for `/api/users/123`)
+- `meta`: Metadata about the request including Durable Object information if applicable
+- `url`: Parsed `URL` object of the request
+- `cookies`: Helper for reading/writing cookies
+
+### DurableRequestEvent
+
+Used for Durable Object method handlers.
+
+```typescript
+type DurableRequestEvent = {
+  request: CfRequest; // The incoming HTTP request
+  object: AnyDurableServer; // The Durable Object instance
+  path: string[]; // URL path segments
+  meta: Meta; // Request metadata
+  url: URL; // Parsed request URL
+  cookies: Cookies; // Request cookies
+};
+```
+
+**Properties:**
+
+- `request`: The HTTP request object
+- `object`: The Durable Object instance (provides access to storage, state, etc.)
+- `path`: URL path segments relative to the Durable Object
+- `meta`: Metadata including the object name and ID
+- `url`: Parsed request URL
+- `cookies`: Cookie helper
+
+### QueueRequestEvent
+
+Used for queue message consumers.
+
+```typescript
+type QueueRequestEvent = {
+  batch: MessageBatch; // The batch of messages
+  path: string[]; // Queue path segments
+  message: Message<unknown>; // Individual message being processed
+  ctx: ExecutionContext; // Worker execution context
+  env: Env; // Environment variables
+};
+```
+
+**Properties:**
+
+- `batch`: The entire batch of messages being processed
+- `path`: Queue path segments for routing
+- `message`: The individual message being processed
+- `ctx`: Execution context for async operations
+- `env`: Environment variables and bindings
+
+### WebsocketInputRequestEvent
+
+Used for incoming WebSocket message handlers.
+
+```typescript
+type WebsocketInputRequestEvent = {
+  ws: WebSocket; // The WebSocket connection
+  session: Session; // Session information
+  object: AnyDurableServer; // The Durable Object instance
+};
+```
+
+**Properties:**
+
+- `ws`: The WebSocket connection object
+- `session`: Session data including participant info and connection state
+- `object`: The Durable Object managing the WebSocket connections
+
+### WebsocketOutputRequestEvent
+
+Used for outgoing WebSocket message handlers (broadcasting).
+
+```typescript
+type WebsocketOutputRequestEvent = {
+  to: { session: Session; ws: WebSocket }[]; // Recipients
+  object: AnyDurableServer; // The Durable Object instance
+};
+```
+
+**Properties:**
+
+- `to`: Array of recipient sessions and their WebSocket connections
+- `object`: The Durable Object managing the WebSocket connections
+
+### ScheduleRequestEvent
+
+Used for scheduled task handlers (cron jobs).
+
+```typescript
+type ScheduleRequestEvent = {
+  object: AnyDurableServer; // The Durable Object instance
+};
+```
+
+**Properties:**
+
+- `object`: The Durable Object instance that can be used for state management
+
+## Error Handling
+
+The RPC system includes built-in error handling. When validation fails or handlers throw errors, appropriate HTTP responses are automatically generated. You can also throw custom errors to return specific status codes and messages to clients.
+
+```typescript
+.handle(({ input }) => {
+  if (input.age < 18) {
+    throw new Error('Must be 18 or older'); // Returns 500 by default
+  }
+  return { success: true };
+});
+```
+
+For more control over error responses, you can use the error utility:
+
+```typescript
+import { error } from 'worker-plugins';
+
+.handle(({ input }) => {
+  if (input.age < 18) {
+    throw error('BAD_REQUEST', 'Must be 18 or older');
+  }
+  return { success: true };
+});
+```

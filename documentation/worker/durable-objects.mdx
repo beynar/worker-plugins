@@ -1,0 +1,42 @@
+---
+title: "Adding Durable Objects"
+description: "For more complex applications, you can add Durable Objects to your Worker. Their routes are automatically routed to the correct Durable Object."
+---
+
+## Automatic Routing
+
+```typescript
+const worker = createWorker()
+  .router((t) => ({
+    users: {
+      create: t.handle(async ({ event }) => {
+        // Automatically routes to USERS Durable Object
+        return await event.env.USERS.getByName("default").create({
+          name: "John",
+          email: "john@example.com",
+        });
+      }),
+    },
+  }))
+  .object("USERS", UserService);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Durable Objects"
+    icon="database"
+    href="/durable-objects/introduction"
+  >
+    Learn how to create and manage Durable Objects.
+  </Card>
+
+  <Card
+    title="Calling Durable Objects"
+    icon="code"
+    href="/client/introduction"
+  >
+    Learn how to call Durable Objects with the client SDK.
+  </Card>
+</CardGroup>

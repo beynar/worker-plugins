@@ -1,0 +1,64 @@
+---
+title: "Introduction"
+description: "Durable Objects in Worker-Plugins provide stateful, persistent objects with built-in WebSocket management, task scheduling, and KV storage capabilities.
+"
+---
+
+## Creating a Durable Object
+
+```typescript
+export class MyDurableObject extends createDurableObject() {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    // Auto-initialized: KV storage, WebSocket manager, Scheduler
+  }
+
+  router = {
+    // HTTP procedures
+  };
+
+  ws_out = {
+    // WebSocket output procedures
+  };
+
+  ws_in = {
+    // WebSocket input handlers
+  };
+
+  tasks = {
+    // Scheduled tasks
+  };
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Routing in Durable Objects"
+    icon="route"
+    href="/durable-objects/routing"
+  >
+    Learn how to create HTTP procedures in Durable Objects.
+  </Card>
+
+{" "}
+
+<Card title="WebSocket Support" icon="bolt" href="/durable-objects/websockets">
+  Master real-time communication with WebSockets.
+</Card>
+
+{" "}
+
+<Card title="Task Scheduling" icon="clock" href="/durable-objects/tasks">
+  Schedule background jobs and cron tasks.
+</Card>
+
+  <Card
+    title="KV Storage"
+    icon="database"
+    href="/durable-objects/kv-storage"
+  >
+    Use built-in key-value storage.
+  </Card>
+</CardGroup>

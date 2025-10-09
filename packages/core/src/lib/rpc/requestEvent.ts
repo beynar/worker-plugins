@@ -67,12 +67,12 @@ export type CronRequestEvent = ScheduledController & {
 };
 
 export type ScheduleRequestEvent = {
-	server: AnyDurableServer;
+	object: AnyDurableServer;
 };
 
 export type DurableRequestEvent = {
 	request: CfRequest;
-	server: AnyDurableServer;
+	object: AnyDurableServer;
 	path: string[];
 	meta: Meta;
 	url: URL;
@@ -81,13 +81,13 @@ export type DurableRequestEvent = {
 
 export type WebsocketOutputRequestEvent = {
 	to: { session: Session; ws: WebSocket }[];
-	server: AnyDurableServer;
+	object: AnyDurableServer;
 };
 
 export type WebsocketInputRequestEvent = {
 	ws: WebSocket;
 	session: Session;
-	server: AnyDurableServer;
+	object: AnyDurableServer;
 };
 
 export type QueueRequestEvent = {
@@ -157,10 +157,10 @@ export const createWorkerEvent = async (
 	return event;
 };
 
-export const createDurableRequestEvent = (request: DurableRequest, server: AnyDurableServer): DurableRequestEvent => {
+export const createDurableRequestEvent = (request: DurableRequest, object: AnyDurableServer): DurableRequestEvent => {
 	const url = new URL(request.url);
 	return {
-		server,
+		object,
 		meta: nullMeta,
 		request,
 		url: new URL(request.url),

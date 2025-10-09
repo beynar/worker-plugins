@@ -1,0 +1,30 @@
+---
+title: "Client SDK Introduction"
+description: "Create type-safe clients for your Worker-Plugins APIs"
+---
+
+# Client SDK Introduction
+
+The Worker-Plugins client SDK provides type-safe access to your APIs from external applications.
+
+## Creating a Client
+
+```typescript
+import { createClient } from "worker-plugins/client";
+
+const client = createClient<WorkerInfer>({
+  endpoint: "https://my-worker.workers.dev",
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Procedures" icon="function" href="/client/procedures" />
+  <Card title="WebSockets" icon="bolt" href="/client/websockets" />
+  <Card
+    title="Error Handling"
+    icon="shield-alert"
+    href="/client/error-handling"
+  />
+</CardGroup>

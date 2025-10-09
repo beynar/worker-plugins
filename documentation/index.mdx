@@ -1,0 +1,64 @@
+---
+title: "Introduction"
+description: "A type-safe RPC framework for Cloudflare Workers with built-in WebSocket support, task scheduling, and plugin architecture"
+---
+
+## Goal
+
+The framework provides a **foundational architecture** that makes it easy to build powerful and extendable Cloudflare Workers applications with a plugin system.
+
+By offering essential building blocks with a clean and easy to use API, it eliminates boilerplate while enabling infinite extensibility.
+
+## What's in the box?
+
+By default, worker-plugins provides:
+
+- **Type-safe RPC communication** routing (ala TRPC)
+- **Type-safe WebSocket management** with automatic reconnection and presence tracking
+- **Task scheduling** support within Durable Objects
+- **Synchronous KV storage** inside Durable Objects
+- **Type-safe queues**
+- **Cron support**
+- **Plugin architecture** for extending functionality
+- **Type-safe client SDK** to interact with your Workers and Durable Objects in a type-safe way
+
+## Architecture Overview
+
+Worker-Plugins consists of three main layers:
+
+1. **Worker Layer**: HTTP endpoints, queue and cron handlers.
+2. **Durable Object Layer**: WebSocket connections, and task scheduling
+3. **Client Layer**: Type-safe SDK for external applications
+
+Each layer is designed to work seamlessly together while maintaining type safety and providing production-ready features.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Start Guide"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Follow our step-by-step guide to get your first Worker-Plugins application running.
+  </Card>
+<Card title="Worker API" icon="server" href="/worker/introduction">
+  Learn how to create Workers with routing, queues, and Durable Object
+  integration.
+</Card>
+
+{" "}
+
+<Card
+  title="Durable Objects"
+  icon="database"
+  href="/durable-objects/introduction"
+>
+  Master Durable Object development with built-in WebSockets, tasks, and
+  storage.
+</Card>
+
+<Card title="Plugins" icon="lightbulb" href="/plugins/introduction">
+  Learn how to extend Worker-Plugins with plugins.
+</Card>
+</CardGroup>

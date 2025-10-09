@@ -1,0 +1,173 @@
+---
+title: "Philosophy & Design Principles"
+description: "Understanding the core design philosophy behind Worker-Plugins"
+---
+
+# Philosophy & Design Principles
+
+Worker-Plugins is built on a set of core principles that guide its design and API decisions. Understanding these principles will help you make the most of the framework.
+
+## Workers as a Cohesive Application
+
+Traditional Cloudflare Workers development often treats each Worker as an isolated function, with Durable Objects as separate stateful entities. Worker-Plugins takes a different approach:
+
+> **Cloudflare Workers should feel like a single cohesive application, not a collection of isolated functions.**
+
+This means:
+
+- **Seamless communication** between Workers and Durable Objects
+- **Unified API surface** across your entire application
+- **Consistent patterns** for routing, middleware, and error handling
+- **Type safety** throughout the entire stack
+
+## Type Safety as a First-Class Citizen
+
+TypeScript is not just supported—it's fundamental to how Worker-Plugins works:
+
+```typescript
+// Input validation with Zod
+const userSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  age: z.number().min(18),
+});
+
+// Type-safe procedures
+const createUser = t
+  .procedure()
+  .input(userSchema)
+  .handle(async ({ input }) => {
+    // input is fully typed: { name: string, email: string, age: number }
+    return { id: "user_123", ...input };
+  });
+```
+
+<Info>
+  Worker-Plugins generates TypeScript types automatically, ensuring that your
+  client code knows exactly what data to expect from your APIs.
+</Info>
+
+## Plugin-Based Architecture
+
+Rather than building features into the core framework, Worker-Plugins provides a plugin system that allows you to extend functionality:
+
+```typescript
+const authPlugin = {
+  middleware: async ({ event }) => {
+    const token = event.request.headers.get("Authorization");
+    if (!token) throw error("UNAUTHORIZED");
+    return { user: await validateToken(token) };
+  },
+};
+
+const worker = createWorker()
+  .use(authPlugin)
+  .router((t) => ({
+    // All procedures in this router have access to the user from middleware
+    profile: t.handle(async ({ ctx }) => {
+      return { user: ctx.user };
+    }),
+  }));
+```
+
+This approach allows for:
+
+- **Modular functionality** - add features as needed
+- **Reusable components** - share plugins across projects
+- **Clean separation** - keep business logic separate from infrastructure
+
+## Built-in Real-Time Capabilities
+
+WebSocket support is not an afterthought—it's built into the core of Worker-Plugins:
+
+```typescript
+export class ChatRoom extends createDurableObject() {
+  // WebSocket output procedures (server → client)
+  ws_out = {
+    message: this.ws_out
+      .procedure()
+      .input(z.object({ text: z.string(), user: z.string() }))
+      .handle(async ({ input }) => {
+        return { type: "message", data: input };
+      }),
+  };
+
+  // WebSocket input handlers (client → server)
+  ws_in = {
+    sendMessage: this.ws_in
+      .procedure()
+      .input(z.object({ text: z.string() }))
+      .handle(async ({ input, session }) => {
+        // Broadcast to all connected clients
+        await this.send.message({
+          text: input.text,
+          user: session.participant.name,
+        });
+      }),
+  };
+}
+```
+
+## Production-Ready by Default
+
+Worker-Plugins includes production-ready features out of the box:
+
+- **Error handling** with structured error responses
+- **Request/Response logging** and monitoring
+- **CORS support** with configurable policies
+- **Input validation** with detailed error messages
+- **Type-safe client generation** for external integrations
+
+## Simplicity Through Convention
+
+The framework follows the principle of **convention over configuration**:
+
+```typescript
+// Simple routing - no complex configuration needed
+const worker = createWorker().router((t) => ({
+  users: {
+    get: t.handle(getUsers),
+    create: t.input(userSchema).handle(createUser),
+  },
+}));
+```
+
+This reduces boilerplate while maintaining flexibility when you need it.
+
+## Distributed Systems Made Simple
+
+Worker-Plugins abstracts away the complexity of distributed systems:
+
+```typescript
+// Call Durable Object methods as if they were local
+const result = await client.CHAT_ROOM("room-123").sendMessage({
+  text: "Hello everyone!",
+});
+```
+
+The framework handles:
+
+- **Automatic routing** to the correct Durable Object instance
+- **Load balancing** across multiple instances
+- **Error recovery** and retries
+- **Type safety** across the network boundary
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="RPC Style Communication"
+    icon="network-wired"
+    href="/concepts/rpc-style"
+  >
+    Learn how Worker-Plugins implements type-safe RPC communication between Workers and Durable Objects.
+  </Card>
+
+  <Card
+    title="Type Safety Deep Dive"
+    icon="shield-check"
+    href="/concepts/type-safety"
+  >
+    Understand how Worker-Plugins achieves end-to-end type safety across your entire application.
+  </Card>
+</CardGroup>

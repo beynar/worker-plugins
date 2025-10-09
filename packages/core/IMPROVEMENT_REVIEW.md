@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This library provides tRPC-like functionality for Cloudflare Workers and Durable Objects with extensive type safety for client inference. While the complex type system serves valid purposes, there are still critical performance and maintainability issues that need addressing.
+This library provides tRPC-like functionality for Cloudflare Workers and Durable Objects, offering extensive type safety for client inference and making Workers and Durable Objects easily extensible through a rich plugin system. While the complex type system serves valid purposes, there are still critical performance and maintainability issues that need addressing.
 
 ## Revisions Based on Design Goals
 

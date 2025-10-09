@@ -1,0 +1,58 @@
+---
+title: "Queues"
+description: "Worker-Plugins provides built-in support for processing Cloudflare Queues with type-safe message handling and automatic retries."
+---
+
+## Basic Queue Handler
+
+```typescript
+const worker = createWorker().queues((q) => ({
+  email: q.procedure().handle(async ({ message }) => {
+    await sendEmail(message.body);
+  }),
+}));
+```
+
+## Queue Configuration
+
+Configure queues in your `wrangler.jsonc`:
+
+```json
+{
+  "queues": {
+    "producers": [
+      {
+        "queue": "email-queue",
+        "binding": "EMAIL_QUEUE"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "email-queue",
+        "max_batch_size": 10,
+        "max_retries": 3
+      }
+    ]
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Durable Object Integration"
+    icon="database"
+    href="/worker/durable-objects"
+  >
+    Learn how Workers communicate with Durable Objects.
+  </Card>
+
+  <Card
+    title="Durable Objects"
+    icon="database"
+    href="/durable-objects/introduction"
+  >
+    Master Durable Object development with built-in services.
+  </Card>
+</CardGroup>
